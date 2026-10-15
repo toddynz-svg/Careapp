@@ -15,13 +15,19 @@ The Kids tab holds the weekly routine and the children's activities.
 - **Weekly routine:** the children's names, school drop-off and pickup times, who does each school run Monday to Friday, and where the children sleep each night. "Who has them" follows the calendar: drop-off is by the parent they slept at, pickup by the parent they'll sleep at. On days the calendar gives to one parent, the children sleep at that parent's; the routine covers the other nights.
 - **Activities:** a name, which children, every week on chosen days (optionally between two dates) or just once, start and finish time, where, and who does drop-off and pickup.
 - Tapping a day on the calendar shows that day's school runs, activities and where the children are sleeping.
-- School runs only show on school days: `SCHOOLS` near the top of the script in `public/index.html` lists each school's children, terms and extra closed days. Special days can also be marked as no school for chosen children.
+- School runs only show on school days: `SCHOOLS` in `public/roster.js` lists each school's children, terms and extra closed days. Special days can also be marked as no school for chosen children.
 
 ## Phone app and notifications
 
 Care can be added to a phone's home screen so it opens like an app (on iPhone: Share, then Add to Home Screen; on Android the app offers an Install button). Each parent can then tap **Turn on** to get a notification when the other sends or answers a request, adds or updates a bill, changes an activity or the weekly routine, adds a special day, or sets holiday care. On iPhone this needs iOS 16.4 or later and only works from the home-screen app.
 
 Notifications use web push, so no email or SMS account is needed. The keys are created on first start and saved as `vapid.json` in `DATA_DIR`.
+
+## Phone calendar sync
+
+At the bottom of the Calendar tab, each parent can get a private calendar link and subscribe to it on their phone (or in Google Calendar via "From URL"). It shows who has the kids each day, every activity (marked when you're doing drop-off or pickup), special days, and the school runs that parent is doing. Phones refresh it on their own schedule, usually every hour or so. "Make a new link" stops the old link working.
+
+The roster rules live in `public/roster.js`, which both the page and the server use.
 
 ## Run it locally
 
@@ -63,7 +69,7 @@ Below the coming weekends, the Calendar tab lists the next public holidays and s
 
 ## Changing the roster
 
-- The alternating pattern: `PHASES` near the top of the script in `public/index.html`. Each phase starts on a Friday and names the Friday of a weekend that belongs to parent A (`aFri`), or `null` for a stretch with no roster.
+- The alternating pattern: `PHASES` in `public/roster.js`. Each phase starts on a Friday and names the Friday of a weekend that belongs to parent A (`aFri`), or `null` for a stretch with no roster.
 - School holiday weeks and other set days: `BLOCKS` in the same place, as `[first day, last day, "a" or "b"]`. These win over the weekend pattern.
 - Public holidays: the `HOL` list in the same place.
 - Extra days outside the weekend pattern (for example the Waitangi week): the `extras` object in `data/care.json` on the volume, as `{"2027-02-01": "a", ...}`.

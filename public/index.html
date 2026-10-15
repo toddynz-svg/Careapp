@@ -176,6 +176,8 @@ input[type=number]{width:100%;min-height:2.9rem;padding:.55rem .7rem;border:1px 
     <h2>Holidays and special days</h2>
     <ul class="list" id="specials"></ul>
     <button class="btn sec" id="addSpecial" type="button" style="margin-top:.6rem">Add a special day</button>
+    <h2>Your phone's calendar</h2>
+    <div class="card" id="feed"></div>
   </section>
 
   <section id="reqView" hidden></section>
@@ -196,46 +198,26 @@ input[type=number]{width:100%;min-height:2.9rem;padding:.55rem .7rem;border:1px 
   <div class="foot"><button class="btn" type="submit">Sign in</button></div>
 </form></dialog>
 
+<script src="/roster.js"></script>
 <script>
 (function(){
 "use strict";
-var DAY=86400000;
-// The agreed roster (care arrangement, Oct 2026 - Sep 2027).
-// PHASES: from each start Friday, weekends alternate, with "a" having the
-// weekend that begins on aFri. aFri null means no weekends are set.
-var PHASES=[
-  {start:"2026-09-04",aFri:"2026-09-04"},
-  {start:"2026-12-18",aFri:null},          // Christmas and summer break: not on the roster
-  {start:"2027-01-22",aFri:"2027-01-29"}   // pattern restarts, Vickie first
-];
-// Each school's terms (first and last day of classes) and extra days it's
-// closed. School runs show on days at least one child has school. Children
-// not listed in any school use the first one.
-// Kendall and Brooklyn's 2027 terms are estimated from their 2026 dates.
-var SCHOOLS=[
-  {kids:["Kendall","Brooklyn"],
-   terms:[["2026-07-20","2026-09-25"],["2026-10-12","2026-12-11"],["2027-02-01","2027-04-09"],["2027-04-26","2027-07-02"],["2027-07-19","2027-09-24"],["2027-10-11","2027-12-10"]],
-   closed:[]},
-  {kids:["Sidney"],
-   terms:[["2026-07-20","2026-09-25"],["2026-10-12","2026-12-16"],["2027-02-03","2027-04-02"],["2027-04-27","2027-07-02"],["2027-07-19","2027-09-24"],["2027-10-11","2027-12-15"]],
-   closed:{"2027-03-30":"Easter Tuesday, school closed","2027-11-11":"Teacher-only day"}}
-];
-// BLOCKS: school holiday weeks and other set days, which win over the pattern.
-var BLOCKS=[
-  ["2026-09-28","2026-10-04","a"],["2026-10-05","2026-10-11","b"],
-  ["2027-01-25","2027-01-28","b"],["2027-02-01","2027-02-05","a"],["2027-02-06","2027-02-08","b"],
-  ["2027-04-12","2027-04-18","b"],["2027-04-19","2027-04-25","a"],
-  ["2027-07-05","2027-07-11","b"],["2027-07-12","2027-07-18","a"],
-  ["2027-09-27","2027-10-03","b"],["2027-10-04","2027-10-10","a"]
-];
-var HOL={"2026-10-26":"Labour Day","2026-11-13":"Canterbury Anniversary","2026-12-25":"Christmas Day","2026-12-26":"Boxing Day","2026-12-28":"Boxing Day (observed)","2027-01-01":"New Year's Day","2027-01-02":"Day after New Year's Day","2027-01-04":"Day after New Year's Day (observed)","2027-02-06":"Waitangi Day","2027-02-08":"Waitangi Day (observed)","2027-03-26":"Good Friday","2027-03-29":"Easter Monday","2027-04-25":"ANZAC Day","2027-04-26":"ANZAC Day (observed)","2027-06-07":"King's Birthday","2027-06-25":"Matariki","2027-11-12":"Canterbury Anniversary","2027-10-25":"Labour Day","2027-12-25":"Christmas Day","2027-12-26":"Boxing Day","2027-12-27":"Christmas Day (observed)","2027-12-28":"Boxing Day (observed)",
-  "2028-01-01":"New Year's Day","2028-01-02":"Day after New Year's Day","2028-01-03":"New Year's Day (observed)","2028-01-04":"Day after New Year's Day (observed)","2028-02-06":"Waitangi Day","2028-02-07":"Waitangi Day (observed)","2028-04-14":"Good Friday","2028-04-17":"Easter Monday","2028-04-25":"ANZAC Day","2028-06-05":"King's Birthday","2028-07-14":"Matariki","2028-10-23":"Labour Day","2028-11-17":"Canterbury Anniversary","2028-12-25":"Christmas Day","2028-12-26":"Boxing Day"};
+var R=ROSTER,DAY=R.DAY,HOL=R.HOL,SCHOOLS=R.SCHOOLS,num=R.num,key=R.key,dow=R.dow;
+// S is the shared state the roster functions read; rebuilt by recompute().
+var S={};
+function owner(k){return R.owner(S,k)}
+function night(k){return R.night(S,k)}
+function resolve(w,k,m){return R.resolve(S,w,k,m)}
+function atSchool(k){return R.atSchool(S,k)}
+function actsOn(k){return R.actsOn(S,k)}
+function dayName(k){return R.dayName(S,k)}
+function recompute(){
+  S={extras:extras,reqs:reqs,care:care,routine:routine,special:special,acts:acts};
+  R.recompute(S);ov=S.ov;ovSet=S.ovSet;pend=S.pend;
+}
 var TYPES={swap:"Swap weekends",off:"Weekend off",holiday:"Holiday",change:"Change care days"};
 var $=function(s){return document.querySelector(s)};
 function el(tag,cls,txt){var e=document.createElement(tag);if(cls)e.className=cls;if(txt!=null)e.textContent=txt;return e}
-function num(k){var p=k.split("-");return Date.UTC(+p[0],+p[1]-1,+p[2])/DAY}
-function key(n){return new Date(n*DAY).toISOString().slice(0,10)}
-function dow(n){return new Date(n*DAY).getUTCDay()}
 function fmt(k,year){var o={timeZone:"UTC",weekday:"short",day:"numeric",month:"short"};if(year)o.year="numeric";return new Date(num(k)*DAY).toLocaleDateString("en-NZ",o)}
 function fmtRange(s,e){return s===e?fmt(s,true):fmt(s)+" – "+fmt(e,true)}
 function todayKey(){var t=new Date();return t.getFullYear()+"-"+String(t.getMonth()+1).padStart(2,"0")+"-"+String(t.getDate()).padStart(2,"0")}
@@ -246,25 +228,6 @@ var who=null,names={a:"Parent A",b:"Parent B"},extras={},reqs=[],exps=[],acts=[]
 var today=todayKey(),sel=today,view={y:+today.slice(0,4),m:+today.slice(5,7)-1},tab="cal";
 
 function nm(p){return names[p]||(p==="a"?"Parent A":"Parent B")}
-var FIXED={};BLOCKS.forEach(function(b){for(var n=num(b[0]);n<=num(b[1]);n++)FIXED[key(n)]=b[2]});
-function pattern(k){
-  if(FIXED[k])return FIXED[k];
-  var n=num(k),d=dow(n);if(d>=1&&d<=4)return null;var fri=n-((d+2)%7),ph=null;
-  PHASES.forEach(function(p){if(num(p.start)<=fri)ph=p});
-  if(!ph||!ph.aFri)return null;
-  return (((fri-num(ph.aFri))/7)%2+2)%2===0?"a":"b";
-}
-function owner(k){if(ok(ov[k]))return ov[k];if(ok(extras[k]))return extras[k];return pattern(k)}
-function recompute(){
-  ov={};pend={};
-  ovSet={};
-  // Agreed requests and directly set holiday care, applied oldest first so the latest wins.
-  var ev=[];
-  reqs.forEach(function(r){if(r.status==="approved")for(var k in r.changes)ev.push({k:k,p:r.changes[k],t:r.respondedAt||""})});
-  for(var k in care)ev.push({k:k,p:care[k].who,t:care[k].at||"",by:care[k].by});
-  ev.sort(function(x,y){return String(x.t).localeCompare(String(y.t))}).forEach(function(e){ov[e.k]=e.p;if(e.by)ovSet[e.k]=e.by;else delete ovSet[e.k]});
-  reqs.forEach(function(r){if(r.status==="pending")for(var k in r.changes)pend[k]=1});
-}
 function runs(ch){
   var ks=Object.keys(ch).sort(),out=[];
   ks.forEach(function(k){var last=out[out.length-1];if(last&&last.to===ch[k]&&num(k)===num(last.end)+1)last.end=k;else out.push({start:k,end:k,to:ch[k]})});
@@ -380,7 +343,7 @@ function renderReqs(){
   groups.forEach(function(g){if(!g[1].length)return;any=true;V.appendChild(el("h2",null,g[0]));var l=el("div","list");g[1].forEach(function(r){l.appendChild(reqCard(r))});V.appendChild(l)});
   if(!any)V.appendChild(el("p","muted","No requests yet. Use New request to ask for a swap, a weekend off, a holiday or a change of care days."));
 }
-function renderAll(){recompute();renderHeader();renderCal();renderDetail();renderUpcoming();renderSpecials();renderReqs();renderExps();renderKids();if(typeof renderSetup==="function")renderSetup()}
+function renderAll(){recompute();renderHeader();renderCal();renderDetail();renderUpcoming();renderSpecials();renderReqs();renderExps();renderKids();renderFeed();if(typeof renderSetup==="function")renderSetup()}
 function setTab(t){tab=t;
   [["cal","#calView","#tabCal"],["req","#reqView","#tabReq"],["exp","#expView","#tabExp"],["kids","#kidsView","#tabKids"]].forEach(function(x){$(x[1]).hidden=t!==x[0];$(x[2]).setAttribute("aria-selected",t===x[0])});
   $("#newBtn").textContent=t==="exp"?"Add a bill":t==="kids"?"Add an activity":"New request";
@@ -648,51 +611,12 @@ $("#expForm").addEventListener("submit",function(ev){
 
 /* ---------- kids: routine, activities, day agenda ---------- */
 var DN=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"],DNL=["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
-function schoolOf(n){for(var i=0;i<SCHOOLS.length;i++)if(SCHOOLS[i].kids.indexOf(n)>=0)return SCHOOLS[i];return SCHOOLS[0]}
-function schoolOpen(sc,k){
-  var d=dow(num(k));if(d===0||d===6||HOL[k]||sc.closed[k])return false;
-  return sc.terms.some(function(t){return k>=t[0]&&k<=t[1]});
-}
-// The children who have school on day k (["*"] stands for everyone when no names are set).
-function atSchool(k){
-  var all=routine.kids.length?routine.kids:["*"],sp=special[k];
-  return all.filter(function(n){
-    if(!schoolOpen(schoolOf(n),k))return false;
-    if(sp&&sp.noSchool&&(!sp.kids||!sp.kids.length||sp.kids.indexOf(n)>=0))return false;
-    return true;
-  });
-}
 function schoolClosedText(k){var t=[];SCHOOLS.forEach(function(sc){if(sc.closed[k])t.push(sc.closed[k]+" ("+sc.kids.join(" and ")+")")});return t.join("; ")}
 function noSchoolText(k){var sp=special[k];if(!sp||!sp.noSchool)return "";return sp.kids&&sp.kids.length?", no school for "+sp.kids.join(" and "):", no school"}
-// Where the children sleep the night of day k: with whoever has them that
-// day on the calendar, otherwise the weekly routine.
-function night(k){return owner(k)||(routine.nights||{})[dow(num(k))]||""}
-// "has": in the morning that's where they slept; later it's where they'll sleep.
-function resolve(w,k,morning){if(ok(w))return w;if(w!=="has")return "";return morning?night(key(num(k)-1)):night(k)}
 function time12(t){if(!t)return "";var h=+t.slice(0,2),m=t.slice(3);return ((h+11)%12+1)+(m==="00"?"":":"+m)+(h<12?"am":"pm")}
-function actsOn(k){
-  var d=dow(num(k));
-  return acts.filter(function(a){
-    if(a.repeat==="once")return a.date===k;
-    if(a.from&&k<a.from||a.until&&k>a.until)return false;
-    if(a.days.indexOf(d)<0)return false;
-    return true;
-  }).sort(function(x,y){return x.start.localeCompare(y.start)});
-}
 function whoChip(label,p){var s=el("span","who");s.appendChild(document.createTextNode(label+" "));s.appendChild(p?el("span","chip "+p,nm(p)):el("span",null,"not set"));return s}
 function agenda(k){
-  var items=[],d=dow(num(k)),sc=(routine.school||{})[d];
-  var sk=sc?atSchool(k):[];
-  if(sk.length){
-    var only=routine.kids.length&&sk.length<routine.kids.length?" ("+sk.join(" and ")+")":"";
-    items.push({t:routine.dropTime,title:"School drop-off"+only,by:[["",resolve(sc.drop,k,true)]]});
-    items.push({t:routine.pickTime,title:"School pickup"+only,by:[["",resolve(sc.pick,k,false)]]});
-  }
-  actsOn(k).forEach(function(a){
-    items.push({t:a.start,title:(a.kids.length===routine.kids.length&&a.kids.length>1?"All":a.kids.join(", "))+": "+a.title,sub:[a.end?"until "+time12(a.end):"",a.location].filter(Boolean).join(", "),
-      by:[a.drop?["Drop-off",resolve(a.drop,k,false)]:null,a.pick?["Pickup",resolve(a.pick,k,false)]:null].filter(Boolean)});
-  });
-  items.sort(function(x,y){return String(x.t).localeCompare(String(y.t))});
+  var items=R.dayItems(S,k);
   var n=night(k);
   if(!items.length&&!n)return null;
   var ul=el("ul","agenda");
@@ -832,7 +756,6 @@ $("#kidsForm").addEventListener("submit",function(ev){
 });
 
 /* ---------- holidays and special days ---------- */
-function dayName(k){return HOL[k]||(special[k]&&special[k].label)||""}
 function setCare(k,p){
   if(!ok(p)||owner(k)===p)return Promise.resolve();
   return api("/care",{date:k,who:p});
@@ -878,6 +801,26 @@ function openSpecial(){
   dlgFoot(F,"Add day");$("#kidsDlg").showModal();
 }
 $("#addSpecial").onclick=openSpecial;
+
+/* ---------- calendar feed ---------- */
+var feedTok="";
+function renderFeed(){
+  var F=$("#feed");F.textContent="";
+  if(!loaded)return;
+  F.appendChild(el("p",null,"Subscribe once and your phone's calendar shows who has the kids, their activities, and the school runs you're doing. It updates by itself."));
+  if(!feedTok){var lb=el("button","btn sec","Get my calendar link");lb.type="button";lb.style.marginTop=".6rem";lb.onclick=function(){api("/feed").then(function(r){feedTok=r.token;renderFeed()})};F.appendChild(lb);return}
+  var https=location.origin+"/cal/"+feedTok+".ics",webcal=https.replace(/^https?:/,"webcal:");
+  var row=el("div","row");row.style.marginTop=".6rem";
+  var a=el("a","btn","Subscribe on this phone");a.href=webcal;a.style.textDecoration="none";a.style.display="inline-flex";a.style.alignItems="center";row.appendChild(a);
+  var cp=el("button","btn sec","Copy link");cp.type="button";cp.onclick=function(){
+    (navigator.clipboard?navigator.clipboard.writeText(https):Promise.reject()).then(function(){cp.textContent="Copied"},function(){prompt("Copy this link",https)});
+  };row.appendChild(cp);F.appendChild(row);
+  F.appendChild(el("p","muted small","For Google Calendar: copy the link, then on a computer open Google Calendar, Other calendars, +, From URL, and paste it."));
+  var rs=el("button","ghost","Make a new link");rs.type="button";rs.style.marginTop=".4rem";
+  rs.onclick=function(){if(confirm("Make a new link? The old one will stop working, so you'll need to subscribe again."))api("/feed/reset",{}).then(function(r){feedTok=r.token;renderFeed()})};
+  F.appendChild(rs);
+  var ps=F.querySelectorAll("p");Array.prototype.forEach.call(ps,function(p){p.style.margin=".4rem 0 0"});ps[0].style.margin="0";
+}
 
 /* ---------- install as an app, and notifications ---------- */
 var swReg=null,installEvt=null,pushOn=false;

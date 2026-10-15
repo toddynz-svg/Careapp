@@ -5,6 +5,7 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 const webpush = require("web-push");
+const R = require("./public/roster.js");
 
 const PORT = process.env.PORT || 3000;
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "data");
@@ -23,7 +24,7 @@ if (!PARENTS.a.pass || !PARENTS.b.pass) {
 
 // ---------- tiny JSON file store ----------
 fs.mkdirSync(DATA_DIR, { recursive: true });
-let db = { extras: {}, requests: [], expenses: [], activities: [], routine: null, special: {}, care: {}, push: { a: [], b: [] } };
+let db = { extras: {}, requests: [], expenses: [], activities: [], routine: null, special: {}, care: {}, push: { a: [], b: [] }, feeds: {} };
 try { db = Object.assign(db, JSON.parse(fs.readFileSync(DB_FILE, "utf8"))); } catch (e) { /* first run */ }
 function save() {
   const tmp = DB_FILE + ".tmp";
@@ -404,6 +405,80 @@ app.post("/api/special/:date/delete", auth, (req, res) => {
   delete db.special[req.params.date];
   save();
   res.json({ ok: true });
+});
+
+// ---------- calendar feed ----------
+// Each parent gets a private link their phone's calendar can subscribe to.
+// Anyone with the link can read it, so it can be reset to a new one.
+function feedToken(who, reset) {
+  db.feeds = db.feeds || {};
+  if (reset || !db.feeds[who]) { db.feeds[who] = crypto.randomBytes(18).toString("base64url"); save(); }
+  return db.feeds[who];
+}
+app.get("/api/feed", auth, (req, res) => res.json({ token: feedToken(req.session.who) }));
+app.post("/api/feed/reset", auth, (req, res) => res.json({ token: feedToken(req.session.who, true) }));
+
+const TZ = "Pacific/Auckland";
+const nzToday = () => new Intl.DateTimeFormat("en-CA", { timeZone: TZ }).format(new Date());
+const icsText = (t) => String(t).replace(/\\/g, "\\\\").replace(/;/g, "\;").replace(/,/g, "\\,").replace(/\r?\n/g, "\\n");
+function fold(line) {
+  const out = [];
+  let buf = Buffer.from(line, "utf8");
+  while (buf.length > 74) {
+    let n = 74;
+    while (n > 0 && (buf[n] & 0xc0) === 0x80) n--; // don't split a UTF-8 character
+    out.push(buf.slice(0, n).toString("utf8"));
+    buf = buf.slice(n);
+  }
+  out.push(buf.toString("utf8"));
+  return out.join("\r\n ");
+}
+const icsDate = (k) => k.replace(/-/g, "");
+const icsTime = (k, t) => icsDate(k) + "T" + t.replace(":", "") + "00";
+function addMinutes(t, m) { const x = +t.slice(0, 2) * 60 + +t.slice(3) + m; return String(Math.floor(x / 60) % 24).padStart(2, "0") + ":" + String(x % 60).padStart(2, "0"); }
+
+app.get("/cal/:token.ics", (req, res) => {
+  const me = ["a", "b"].find((p) => db.feeds && db.feeds[p] && db.feeds[p] === req.params.token);
+  if (!me) return res.status(404).send("Not found");
+  const S = { extras: db.extras, reqs: db.requests, care: db.care, routine: db.routine || defaultRoutine(), special: db.special, acts: db.activities };
+  R.recompute(S);
+  const nm = (p) => PARENTS[p].name;
+  const stamp = new Date().toISOString().replace(/[-:]/g, "").slice(0, 15) + "Z";
+  const L = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Care calendar//EN", "CALSCALE:GREGORIAN", "METHOD:PUBLISH",
+    "X-WR-CALNAME:Care calendar (" + icsText(nm(me)) + ")", "X-WR-TIMEZONE:" + TZ, "REFRESH-INTERVAL;VALUE=DURATION:PT1H", "X-PUBLISHED-TTL:PT1H",
+    "BEGIN:VTIMEZONE", "TZID:" + TZ,
+    "BEGIN:DAYLIGHT", "TZOFFSETFROM:+1200", "TZOFFSETTO:+1300", "TZNAME:NZDT", "DTSTART:19700927T020000", "RRULE:FREQ=YEARLY;BYMONTH=9;BYDAY=-1SU", "END:DAYLIGHT",
+    "BEGIN:STANDARD", "TZOFFSETFROM:+1300", "TZOFFSETTO:+1200", "TZNAME:NZST", "DTSTART:19700405T030000", "RRULE:FREQ=YEARLY;BYMONTH=4;BYDAY=1SU", "END:STANDARD",
+    "END:VTIMEZONE"];
+  const ev = (uid, props) => { L.push("BEGIN:VEVENT", "UID:" + uid + "@care-calendar", "DTSTAMP:" + stamp); props.forEach((p) => L.push(p)); L.push("END:VEVENT"); };
+  const start = R.num(nzToday()) - 31, end = start + 31 + 366;
+  // Care days, as one all-day event per run of days with the same parent.
+  let run = null;
+  const flush = () => { if (run) ev("care-" + run.from, ["DTSTART;VALUE=DATE:" + icsDate(run.from), "DTEND;VALUE=DATE:" + icsDate(R.key(run.to + 1)), "SUMMARY:" + icsText("Kids with " + nm(run.p)), "TRANSP:TRANSPARENT"]); run = null; };
+  for (let n = start; n <= end; n++) {
+    const k = R.key(n), o = R.owner(S, k);
+    if (run && o === run.p && n === run.to + 1) run.to = n;
+    else { flush(); if (o) run = { p: o, from: k, to: n }; }
+    const label = R.dayName(S, k);
+    if (label && !R.HOL[k]) ev("special-" + k, ["DTSTART;VALUE=DATE:" + icsDate(k), "DTEND;VALUE=DATE:" + icsDate(R.key(n + 1)), "SUMMARY:" + icsText(label), "TRANSP:TRANSPARENT"]);
+    R.dayItems(S, k).forEach((it, i) => {
+      if (!it.t) return;
+      const mine = it.by.filter((x) => x[1] === me).map((x) => (x[0] || it.title).toLowerCase());
+      // School runs only appear for the parent doing them; activities appear for both.
+      if (it.kind === "school" && !mine.length) return;
+      const title = it.kind === "school" ? it.title : it.title + (mine.length ? " (you: " + mine.join(", ") + ")" : "");
+      const desc = it.by.map((x) => (x[0] || "By") + ": " + (x[1] ? nm(x[1]) : "not set")).concat(it.note ? [it.note] : []).join("\n");
+      const props = ["DTSTART;TZID=" + TZ + ":" + icsTime(k, it.t), "DTEND;TZID=" + TZ + ":" + icsTime(k, it.end || addMinutes(it.t, it.kind === "school" ? 15 : 60)),
+        "SUMMARY:" + icsText(title)];
+      if (desc) props.push("DESCRIPTION:" + icsText(desc));
+      if (it.location) props.push("LOCATION:" + icsText(it.location));
+      ev(it.kind + "-" + k + "-" + i + "-" + crypto.createHash("sha1").update(it.title).digest("hex").slice(0, 8), props);
+    });
+  }
+  flush();
+  L.push("END:VCALENDAR");
+  res.set({ "Content-Type": "text/calendar; charset=utf-8", "Cache-Control": "no-cache" });
+  res.send(L.map(fold).join("\r\n") + "\r\n");
 });
 
 app.use(express.static(path.join(__dirname, "public")));
