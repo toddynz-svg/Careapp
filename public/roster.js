@@ -80,9 +80,25 @@ function atSchool(S,k){
   });
 }
 
-// Where the children sleep the night of day k: with whoever has them that
+// One-off changes to a day's runs: S.runs[day][slot] = "a" or "b", where slot
+// is "school-drop", "school-pick", or an activity id plus "-drop" or "-pick".
+function runFor(S,k,slot){var r=((S.runs||{})[k]||{})[slot];return ok(r)?r:""}
+// Who does school drop-off on day k, worked out without looking at the night
+// before: a one-off change, a named parent in the routine, or for "who has
+// them" on a weekday the calendar leaves open, that weekday's routine night.
+// "" when there's no school run or it can't be told yet.
+function schoolDrop(S,k){
+  var r=S.routine||{},d=dow(num(k)),sc=(r.school||{})[d];
+  if(!sc||!atSchool(S,k).length)return "";
+  var x=runFor(S,k,"school-drop")||(ok(sc.drop)?sc.drop:"");
+  if(!x&&sc.drop==="has"&&!owner(S,k)){var n=(r.nights||{})[d];if(ok(n))x=n}
+  return x;
+}
+// Where the children sleep the night of day k. If a named parent does school
+// drop-off the next morning, they sleep there (a Sunday night at the end of a
+// weekend goes back for Monday school). Otherwise with whoever has them that
 // day on the calendar, otherwise the weekly routine.
-function night(S,k){return owner(S,k)||((S.routine||{}).nights||{})[dow(num(k))]||""}
+function night(S,k){return schoolDrop(S,key(num(k)+1))||owner(S,k)||((S.routine||{}).nights||{})[dow(num(k))]||""}
 // "has": in the morning that's where they slept; later it's where they'll sleep.
 function resolve(S,w,k,morning){if(ok(w))return w;if(w!=="has")return "";return morning?night(S,key(num(k)-1)):night(S,k)}
 
@@ -97,6 +113,8 @@ function actsOn(S,k){
 }
 
 function time12(t){if(!t)return "";var h=+t.slice(0,2),m=t.slice(3);return ((h+11)%12+1)+(m==="00"?"":":"+m)+(h<12?"am":"pm")}
+// One run as [label, parent, slot, changed for this day].
+function run(S,k,label,slot,w,morning){var o=runFor(S,k,slot);return [label,o||resolve(S,w,k,morning),slot,!!o]}
 // Day k's plans in time order: school runs and activities, each with who
 // does drop-off and pickup as [label, parent] pairs.
 function dayItems(S,k){
@@ -104,13 +122,14 @@ function dayItems(S,k){
   var sk=sc?atSchool(S,k):[];
   if(sk.length){
     var only=routine.kids.length&&sk.length<routine.kids.length?" ("+sk.join(" and ")+")":"";
-    items.push({t:routine.dropTime,title:"School drop-off"+only,kind:"school",by:[["",resolve(S,sc.drop,k,true)]]});
-    items.push({t:routine.pickTime,title:"School pickup"+only,kind:"school",by:[["",resolve(S,sc.pick,k,false)]]});
+    items.push({t:routine.dropTime,title:"School drop-off"+only,kind:"school",by:[run(S,k,"","school-drop",sc.drop,true)]});
+    items.push({t:routine.pickTime,title:"School pickup"+only,kind:"school",by:[run(S,k,"","school-pick",sc.pick,false)]});
   }
   actsOn(S,k).forEach(function(a){
     items.push({t:a.start,end:a.end,title:(a.kids.length===routine.kids.length&&a.kids.length>1?"All":a.kids.join(", "))+": "+a.title,
-      sub:[a.end?"until "+time12(a.end):"",a.location].filter(Boolean).join(", "),location:a.location,note:a.note,kind:"activity",
-      by:[a.drop?["Drop-off",resolve(S,a.drop,k,false)]:null,a.pick?["Pickup",resolve(S,a.pick,k,false)]:null].filter(Boolean)});
+      id:a.id,sub:[a.end?"until "+time12(a.end):"",a.location].filter(Boolean).join(", "),location:a.location,note:a.note,kind:"activity",
+      by:[a.drop||runFor(S,k,a.id+"-drop")?run(S,k,"Drop-off",a.id+"-drop",a.drop,false):null,
+          a.pick||runFor(S,k,a.id+"-pick")?run(S,k,"Pickup",a.id+"-pick",a.pick,false):null].filter(Boolean)});
   });
   items.sort(function(x,y){return String(x.t).localeCompare(String(y.t))});
   return items;
@@ -118,6 +137,6 @@ function dayItems(S,k){
 
 var api={DAY:DAY,PHASES:PHASES,SCHOOLS:SCHOOLS,BLOCKS:BLOCKS,HOL:HOL,num:num,key:key,dow:dow,pattern:pattern,
   recompute:recompute,owner:owner,dayName:dayName,schoolOf:schoolOf,schoolOpen:schoolOpen,atSchool:atSchool,
-  night:night,resolve:resolve,actsOn:actsOn,dayItems:dayItems,time12:time12};
+  night:night,resolve:resolve,runFor:runFor,schoolDrop:schoolDrop,actsOn:actsOn,dayItems:dayItems,time12:time12};
 if(typeof module!=="undefined"&&module.exports)module.exports=api;else root.ROSTER=api;
 })(this);

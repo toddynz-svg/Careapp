@@ -24,7 +24,7 @@ if (!PARENTS.a.pass || !PARENTS.b.pass) {
 
 // ---------- tiny JSON file store ----------
 fs.mkdirSync(DATA_DIR, { recursive: true });
-let db = { extras: {}, requests: [], expenses: [], activities: [], routine: null, special: {}, care: {}, push: { a: [], b: [] }, feeds: {}, notes: {}, kidInfo: {} };
+let db = { extras: {}, requests: [], expenses: [], activities: [], routine: null, special: {}, care: {}, push: { a: [], b: [] }, feeds: {}, notes: {}, kidInfo: {}, runs: {} };
 try { db = Object.assign(db, JSON.parse(fs.readFileSync(DB_FILE, "utf8"))); } catch (e) { /* first run */ }
 function save() {
   const tmp = DB_FILE + ".tmp";
@@ -166,6 +166,7 @@ app.get("/api/state", auth, (req, res) => {
     care: db.care,
     notes: db.notes,
     kidInfo: db.kidInfo,
+    runs: db.runs,
     routine: db.routine || defaultRoutine(),
   });
 });
@@ -411,6 +412,27 @@ app.post("/api/activities/:id", auth, (req, res) => {
   res.json(db.activities[i]);
 });
 
+// One-off change to who does a school run or activity drop-off/pickup on one day.
+// slot is "school-drop", "school-pick", or an activity id plus "-drop" or "-pick".
+app.post("/api/runs", auth, (req, res) => {
+  const b = req.body || {};
+  if (!isDate(b.date)) return res.status(400).json({ error: "Choose a date" });
+  const m = /^(school|[0-9a-f]{16})-(drop|pick)$/.exec(String(b.slot || ""));
+  const act = m && m[1] !== "school" ? db.activities.find((x) => x.id === m[1]) : null;
+  if (!m || (m[1] !== "school" && !act)) return res.status(400).json({ error: "Unknown run" });
+  const day = db.runs[b.date] || {};
+  if (b.who === "") delete day[b.slot];
+  else if (isParent(b.who)) day[b.slot] = b.who;
+  else return res.status(400).json({ error: "Bad parent" });
+  if (Object.keys(day).length) db.runs[b.date] = day; else delete db.runs[b.date];
+  save();
+  if (b.who) {
+    const what = (act ? act.title : "school") + " " + (m[2] === "drop" ? "drop-off" : "pickup");
+    tell(req.session.who, PARENTS[b.who].name + " is doing " + what + " on " + fmtDay(b.date), "cal");
+  }
+  res.json({ ok: true });
+});
+
 // ---------- special days ----------
 // Extra dates such as teacher-only days.
 app.post("/api/special", auth, (req, res) => {
@@ -522,7 +544,7 @@ function addMinutes(t, m) { const x = +t.slice(0, 2) * 60 + +t.slice(3) + m; ret
 app.get("/cal/:token.ics", (req, res) => {
   const me = ["a", "b"].find((p) => db.feeds && db.feeds[p] && db.feeds[p] === req.params.token);
   if (!me) return res.status(404).send("Not found");
-  const S = { extras: db.extras, reqs: db.requests, care: db.care, routine: db.routine || defaultRoutine(), special: db.special, acts: db.activities };
+  const S = { extras: db.extras, reqs: db.requests, care: db.care, routine: db.routine || defaultRoutine(), special: db.special, acts: db.activities, runs: db.runs };
   R.recompute(S);
   const nm = (p) => PARENTS[p].name;
   const stamp = new Date().toISOString().replace(/[-:]/g, "").slice(0, 15) + "Z";

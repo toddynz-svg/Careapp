@@ -215,7 +215,7 @@ function atSchool(k){return R.atSchool(S,k)}
 function actsOn(k){return R.actsOn(S,k)}
 function dayName(k){return R.dayName(S,k)}
 function recompute(){
-  S={extras:extras,reqs:reqs,care:care,routine:routine,special:special,acts:acts};
+  S={extras:extras,reqs:reqs,care:care,routine:routine,special:special,acts:acts,runs:runs};
   R.recompute(S);ov=S.ov;ovSet=S.ovSet;pend=S.pend;
 }
 var TYPES={swap:"Swap weekends",off:"Weekend off",holiday:"Holiday",change:"Change care days"};
@@ -227,7 +227,7 @@ function todayKey(){var t=new Date();return t.getFullYear()+"-"+String(t.getMont
 function ok(v){return v==="a"||v==="b"}
 function oth(p){return p==="a"?"b":"a"}
 
-var who=null,names={a:"Parent A",b:"Parent B"},extras={},reqs=[],exps=[],acts=[],special={},care={},notes={},kidInfo={},ovSet={},routine={kids:[],school:{},nights:{}},ov={},pend={},loaded=false;
+var who=null,names={a:"Parent A",b:"Parent B"},extras={},reqs=[],exps=[],acts=[],special={},care={},notes={},kidInfo={},runs={},ovSet={},routine={kids:[],school:{},nights:{}},ov={},pend={},loaded=false;
 var today=todayKey(),sel=today,view={y:+today.slice(0,4),m:+today.slice(5,7)-1},tab="cal";
 
 function nm(p){return names[p]||(p==="a"?"Parent A":"Parent B")}
@@ -248,7 +248,7 @@ function api(path,body){
     .then(function(r){if(r.status===401){showLogin();throw new Error("auth")}return r.json().then(function(j){if(!r.ok)throw new Error(j.error||"Request failed");return j})});
 }
 function load(){
-  return api("/state").then(function(s){$("#outBtn").hidden=false;who=s.who;names=s.names;extras=s.extras||{};reqs=s.requests||[];exps=s.expenses||[];acts=s.activities||[];special=s.special||{};care=s.care||{};notes=s.notes||{};kidInfo=s.kidInfo||{};routine=s.routine||routine;loaded=true;renderAll();resendPush()}).catch(function(){});
+  return api("/state").then(function(s){$("#outBtn").hidden=false;who=s.who;names=s.names;extras=s.extras||{};reqs=s.requests||[];exps=s.expenses||[];acts=s.activities||[];special=s.special||{};care=s.care||{};notes=s.notes||{};kidInfo=s.kidInfo||{};runs=s.runs||{};routine=s.routine||routine;loaded=true;renderAll();resendPush()}).catch(function(){});
 }
 
 /* ---------- rendering ---------- */
@@ -642,11 +642,30 @@ function agenda(k){
     var li=el("li");li.appendChild(el("span","t",time12(it.t)));
     var b=el("div");b.appendChild(el("div",null,it.title));
     if(it.sub)b.appendChild(el("div","who",it.sub));
-    it.by.forEach(function(x){var r=el("div");r.appendChild(whoChip(x[0]?x[0]+":":"By",x[1]));b.appendChild(r)});
+    it.by.forEach(function(x){var r=el("div");r.appendChild(whoChip(x[0]?x[0]+":":"By",x[1]));if(x[3])r.appendChild(el("span","who"," (just this day)"));b.appendChild(r)});
+    if(loaded)b.appendChild(changeRuns(k,it));
     li.appendChild(b);ul.appendChild(li);
   });
   if(n){var li=el("li");li.appendChild(el("span","t","Night"));var b=el("div");b.appendChild(document.createTextNode("Sleeping at "));b.appendChild(el("span","chip "+n,nm(n)+"'s"));li.appendChild(b);ul.appendChild(li)}
   return ul;
+}
+// "Change for this day": pick who does each drop-off or pickup on day k only.
+function changeRuns(k,it){
+  var slots=it.kind==="school"?[[it.by[0][2],it.title]]:[[it.id+"-drop","Drop-off"],[it.id+"-pick","Pickup"]];
+  var w=el("div"),open=el("button","ghost small","Change for this day");open.type="button";
+  open.style.minHeight="2rem";open.style.padding=".1rem .4rem";
+  var box=el("div");box.hidden=true;
+  slots.forEach(function(sl){
+    var cur=((runs[k]||{})[sl[0]])||"",r=el("label","row small");r.style.margin=".3rem 0";r.style.gap=".5rem";
+    r.appendChild(el("span",null,sl[1]));
+    var s=el("select");s.style.minHeight="2.4rem";
+    [["","As usual"],["a",nm("a")],["b",nm("b")]].forEach(function(o){s.appendChild(new Option(o[1],o[0]))});
+    s.value=cur;
+    s.onchange=function(){s.disabled=true;api("/runs",{date:k,slot:sl[0],who:s.value}).then(load).catch(function(e){s.disabled=false;if(e.message!=="auth")alertMsg("That didn't save: "+e.message)})};
+    r.appendChild(s);box.appendChild(r);
+  });
+  open.onclick=function(){box.hidden=!box.hidden};
+  w.appendChild(open);w.appendChild(box);return w;
 }
 function whoLabel(w){return w==="has"?"Who has them":ok(w)?nm(w):"Not set"}
 function renderKids(){
@@ -682,7 +701,7 @@ function renderKids(){
     var n=(routine.nights||{})[d];tr.appendChild(el("td",null,ok(n)?nm(n):"Not set"));t.appendChild(tr);
   });
   c.appendChild(t);
-  c.appendChild(el("p","muted small","School runs show on term days. On days the calendar gives to one of you, the children sleep at that parent's."));
+  c.appendChild(el("p","muted small","School runs show on term days. The children sleep at whoever does school drop-off the next morning; otherwise at whoever the calendar gives the day to. To change a run for one day only, open the day on the calendar."));
   if(routine.updatedBy)c.appendChild(el("p","muted small","Last changed by "+nm(routine.updatedBy)+(routine.updatedAt?" on "+fmt(String(routine.updatedAt).slice(0,10)):"")+"."));
   var eb=el("button","btn sec","Edit routine");eb.type="button";eb.onclick=openRoutine;c.appendChild(eb);
   V.appendChild(c);
@@ -717,7 +736,7 @@ function openRoutine(){
     tr.appendChild(a);tr.appendChild(b);tr.appendChild(c);t.appendChild(tr);
   });
   F.appendChild(t);
-  F.appendChild(el("p","muted small","\"Who has them\" follows the calendar: drop-off is by the parent they slept at, pickup by the parent they'll sleep at. Sleeps at is for nights the calendar doesn't already give to one of you."));
+  F.appendChild(el("p","muted small","\"Who has them\" follows the calendar: drop-off is by the parent they slept at, pickup by the parent they'll sleep at. Sleeps at is for nights the calendar doesn't already give to one of you. The night before school, the children sleep at whoever does drop-off, so a Sunday at the end of a weekend goes back for Monday school."));
   dlgFoot(F,"Save");$("#kidsDlg").showModal();
 }
 function openAct(a){
