@@ -15,7 +15,7 @@ The Kids tab holds the weekly routine and the children's activities.
 - **Weekly routine:** the children's names, school drop-off and pickup times, who does each school run Monday to Friday, and where the children sleep each night. "Who has them" follows the calendar: drop-off is by the parent they slept at, pickup by the parent they'll sleep at. On days the calendar gives to one parent, the children sleep at that parent's; the routine covers the other nights.
 - **Activities:** a name, which children, every week on chosen days (optionally between two dates) or just once, start and finish time, where, and who does drop-off and pickup.
 - Tapping a day on the calendar shows that day's school runs, activities and where the children are sleeping.
-- School runs only show during school terms: `TERMS` near the top of the script in `public/index.html`.
+- School runs only show during school terms: `TERMS` near the top of the script in `public/index.html`. When only some children are off (schools finishing on different days), add them to `SCHOOL_OUT`; special days can also be marked as no school for chosen children.
 
 ## Run it locally
 

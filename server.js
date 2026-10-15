@@ -313,7 +313,10 @@ app.post("/api/special", auth, (req, res) => {
   if (!isDate(b.date)) return res.status(400).json({ error: "Choose a date" });
   const label = str(b.label, 60);
   if (!label) return res.status(400).json({ error: "Give the day a name" });
-  db.special[b.date] = { label, noSchool: b.noSchool !== false, by: req.session.who, at: new Date().toISOString() };
+  const kids = (db.routine || defaultRoutine()).kids;
+  db.special[b.date] = { label, noSchool: b.noSchool !== false,
+    kids: Array.isArray(b.kids) ? b.kids.filter((k) => kids.includes(k)) : [],
+    by: req.session.who, at: new Date().toISOString() };
   save();
   res.json(db.special[b.date]);
 });

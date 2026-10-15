@@ -201,7 +201,10 @@ var PHASES=[
 ];
 // School terms (first and last day). School runs only show on term days
 // that aren't public holidays. Check these against the school's own dates.
-var TERMS=[["2026-07-20","2026-09-25"],["2026-10-12","2026-12-17"],["2027-02-09","2027-04-09"],["2027-04-26","2027-07-02"],["2027-07-19","2027-09-24"],["2027-10-11","2027-12-16"]];
+var TERMS=[["2026-07-20","2026-09-25"],["2026-10-12","2026-12-16"],["2027-02-09","2027-04-09"],["2027-04-26","2027-07-02"],["2027-07-19","2027-09-24"],["2027-10-11","2027-12-16"]];
+// Days when only some of the children are off school, e.g. schools finishing
+// for the year on different days: [first day, last day, [children off]].
+var SCHOOL_OUT=[["2026-12-14","2026-12-16",["Kendall","Brooklyn"]]];
 // BLOCKS: school holiday weeks and other set days, which win over the pattern.
 var BLOCKS=[
   ["2026-09-28","2026-10-04","a"],["2026-10-05","2026-10-11","b"],
@@ -303,7 +306,7 @@ function renderDetail(){
   if(o){p.appendChild(document.createTextNode("With "));p.appendChild(el("span","chip "+o,nm(o)));if(ovSet[sel])p.appendChild(el("span","muted small","  set by "+nm(ovSet[sel])));else if(ok(ov[sel]))p.appendChild(el("span","muted small","  changed by agreement"))}
   else p.textContent="Not on the weekend roster.";
   D.appendChild(p);
-  if(dayName(sel))D.appendChild(el("p","muted",dayName(sel)+(special[sel]&&special[sel].noSchool?", no school":"")));
+  if(dayName(sel))D.appendChild(el("p","muted",dayName(sel)+noSchoolText(sel)));
   if(pend[sel])D.appendChild(el("p","muted","A change to this day is waiting for an answer."));
   var ag=agenda(sel);if(ag)D.appendChild(ag);
   if(loaded&&sel>=today){
@@ -629,7 +632,16 @@ $("#expForm").addEventListener("submit",function(ev){
 
 /* ---------- kids: routine, activities, day agenda ---------- */
 var DN=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"],DNL=["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
-function inTerm(k){var d=dow(num(k));if(d===0||d===6||HOL[k]||special[k]&&special[k].noSchool)return false;return TERMS.some(function(t){return k>=t[0]&&k<=t[1]})}
+function inTerm(k){var d=dow(num(k));if(d===0||d===6||HOL[k])return false;return TERMS.some(function(t){return k>=t[0]&&k<=t[1]})}
+// The children who have school on day k (all of them when no names are set).
+function atSchool(k){
+  if(!inTerm(k))return [];
+  var off={},all=routine.kids.length?routine.kids:["*"];
+  SCHOOL_OUT.forEach(function(x){if(k>=x[0]&&k<=x[1])x[2].forEach(function(n){off[n]=1})});
+  var sp=special[k];if(sp&&sp.noSchool){if(sp.kids&&sp.kids.length)sp.kids.forEach(function(n){off[n]=1});else return []}
+  return all.filter(function(n){return !off[n]});
+}
+function noSchoolText(k){var sp=special[k];if(!sp||!sp.noSchool)return "";return sp.kids&&sp.kids.length?", no school for "+sp.kids.join(" and "):", no school"}
 // Where the children sleep the night of day k: with whoever has them that
 // day on the calendar, otherwise the weekly routine.
 function night(k){return owner(k)||(routine.nights||{})[dow(num(k))]||""}
@@ -648,9 +660,11 @@ function actsOn(k){
 function whoChip(label,p){var s=el("span","who");s.appendChild(document.createTextNode(label+" "));s.appendChild(p?el("span","chip "+p,nm(p)):el("span",null,"not set"));return s}
 function agenda(k){
   var items=[],d=dow(num(k)),sc=(routine.school||{})[d];
-  if(sc&&inTerm(k)){
-    items.push({t:routine.dropTime,title:"School drop-off",by:[["",resolve(sc.drop,k,true)]]});
-    items.push({t:routine.pickTime,title:"School pickup",by:[["",resolve(sc.pick,k,false)]]});
+  var sk=sc?atSchool(k):[];
+  if(sk.length){
+    var only=routine.kids.length&&sk.length<routine.kids.length?" ("+sk.join(" and ")+")":"";
+    items.push({t:routine.dropTime,title:"School drop-off"+only,by:[["",resolve(sc.drop,k,true)]]});
+    items.push({t:routine.pickTime,title:"School pickup"+only,by:[["",resolve(sc.pick,k,false)]]});
   }
   actsOn(k).forEach(function(a){
     items.push({t:a.start,title:(a.kids.length===routine.kids.length&&a.kids.length>1?"All":a.kids.join(", "))+": "+a.title,sub:[a.end?"until "+time12(a.end):"",a.location].filter(Boolean).join(", "),
@@ -774,7 +788,7 @@ $("#kidsForm").addEventListener("submit",function(ev){
   if(kmode==="special"){
     var sd=g("sDate"),sl=g("sLabel"),sw=g("sWho");
     $("#kSend").disabled=true;
-    api("/special",{date:sd,label:sl,noSchool:F.querySelector("#sNoSchool").checked}).then(function(){special[sd]={label:sl};return setCare(sd,sw)})
+    api("/special",{date:sd,label:sl,noSchool:F.querySelector("#sNoSchool").checked,kids:Array.prototype.map.call(F.querySelectorAll("input[name=sKid]:checked"),function(i){return i.value})}).then(function(){special[sd]={label:sl};return setCare(sd,sw)})
       .then(function(){$("#kidsDlg").close();load()})
       .catch(function(e){$("#kSend").disabled=false;if(e.message==="auth")return;var x=$("#kErr");x.hidden=false;x.textContent=e.message});
     return;
@@ -808,7 +822,7 @@ function renderSpecials(){
   ks.forEach(function(k){
     var li=el("li","up"),o=owner(k),left=el("div");
     left.appendChild(el("div",null,fmt(k,true)));
-    left.appendChild(el("div","muted small",dayName(k)+(special[k]&&special[k].noSchool?", no school":"")));
+    left.appendChild(el("div","muted small",dayName(k)+noSchoolText(k)));
     li.appendChild(left);
     var right=el("div");right.style.textAlign="right";
     if(loaded){
@@ -833,6 +847,11 @@ function openSpecial(){
   F.appendChild(field("sDate","Date","date",sel>=today?sel:today,{min:today}));
   F.appendChild(field("sLabel","What is it?","text","",{maxlength:60,placeholder:"Teacher-only day"}));
   var l=el("label","opt");l.style.margin=".8rem 0 0";var i=el("input");i.type="checkbox";i.id="sNoSchool";i.checked=true;l.appendChild(i);l.appendChild(el("span",null,"No school this day"));F.appendChild(l);
+  if(routine.kids.length>1){
+    var fk=el("fieldset");fk.appendChild(el("legend",null,"Who's off school? (leave blank for all)"));var ck=el("div","checks");
+    routine.kids.forEach(function(k){var l2=el("label","opt");l2.style.margin="0";var i2=el("input");i2.type="checkbox";i2.name="sKid";i2.value=k;l2.appendChild(i2);l2.appendChild(el("span",null,k));ck.appendChild(l2)});
+    fk.appendChild(ck);F.appendChild(fk);i.onchange=function(){fk.hidden=!i.checked};
+  }
   var w=el("div"),lb=el("label",null,"Who has care?");lb.htmlFor="sWho";w.appendChild(lb);w.appendChild(whoSelect("sWho","",false));F.appendChild(w);
   dlgFoot(F,"Add day");$("#kidsDlg").showModal();
 }
