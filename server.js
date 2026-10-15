@@ -22,7 +22,7 @@ if (!PARENTS.a.pass || !PARENTS.b.pass) {
 
 // ---------- tiny JSON file store ----------
 fs.mkdirSync(DATA_DIR, { recursive: true });
-let db = { extras: {}, requests: [], expenses: [], activities: [], routine: null };
+let db = { extras: {}, requests: [], expenses: [], activities: [], routine: null, special: {} };
 try { db = Object.assign(db, JSON.parse(fs.readFileSync(DB_FILE, "utf8"))); } catch (e) { /* first run */ }
 function save() {
   const tmp = DB_FILE + ".tmp";
@@ -109,6 +109,7 @@ app.get("/api/state", auth, (req, res) => {
     requests: db.requests,
     expenses: db.expenses,
     activities: db.activities,
+    special: db.special,
     routine: db.routine || defaultRoutine(),
   });
 });
@@ -302,6 +303,25 @@ app.post("/api/activities/:id", auth, (req, res) => {
     updatedAt: new Date().toISOString(), updatedBy: req.session.who }, v);
   save();
   res.json(db.activities[i]);
+});
+
+// ---------- special days ----------
+// Extra dates such as teacher-only days. Who has care on them goes through
+// the normal request flow, so the other parent still agrees to it.
+app.post("/api/special", auth, (req, res) => {
+  const b = req.body || {};
+  if (!isDate(b.date)) return res.status(400).json({ error: "Choose a date" });
+  const label = str(b.label, 60);
+  if (!label) return res.status(400).json({ error: "Give the day a name" });
+  db.special[b.date] = { label, noSchool: b.noSchool !== false, by: req.session.who, at: new Date().toISOString() };
+  save();
+  res.json(db.special[b.date]);
+});
+app.post("/api/special/:date/delete", auth, (req, res) => {
+  if (!db.special[req.params.date]) return res.status(404).json({ error: "Not found" });
+  delete db.special[req.params.date];
+  save();
+  res.json({ ok: true });
 });
 
 app.use(express.static(path.join(__dirname, "public")));

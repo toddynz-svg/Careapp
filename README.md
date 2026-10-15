@@ -51,6 +51,10 @@ gh repo create care-calendar --private --source=. --push
 
 Redeploys happen automatically on every push to the repo.
 
+## Holidays and special days
+
+Below the coming weekends, the Calendar tab lists the next public holidays and special days. Choosing who has care on one sends a request, so the other parent agrees to it like any other change. **Add a special day** adds dates like teacher-only days, with a name, whether there's no school (which hides that day's school runs), and who has care.
+
 ## Changing the roster
 
 - The alternating pattern: `PHASES` near the top of the script in `public/index.html`. Each phase starts on a Friday and names the Friday of a weekend that belongs to parent A (`aFri`), or `null` for a stretch with no roster.
