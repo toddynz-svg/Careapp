@@ -123,6 +123,7 @@ input[type=number]{width:100%;min-height:2.9rem;padding:.55rem .7rem;border:1px 
 .btn.small{min-height:2.4rem;padding:.35rem .8rem;font-size:.92rem}
 .req p,.card>p{margin:0}
 .card>p+p{margin-top:.3rem}
+.card a:not(.btn){color:inherit;text-underline-offset:3px}
 .agenda{list-style:none;margin:.6rem 0 0;padding:.6rem 0 0;border-top:1px solid var(--line);display:grid;gap:.45rem}
 .agenda li{display:grid;grid-template-columns:4.2rem 1fr;gap:.6rem;align-items:baseline}
 .agenda .t{font-variant-numeric:tabular-nums;font-weight:600;color:var(--muted);font-size:.92rem}
@@ -226,7 +227,7 @@ function todayKey(){var t=new Date();return t.getFullYear()+"-"+String(t.getMont
 function ok(v){return v==="a"||v==="b"}
 function oth(p){return p==="a"?"b":"a"}
 
-var who=null,names={a:"Parent A",b:"Parent B"},extras={},reqs=[],exps=[],acts=[],special={},care={},notes={},ovSet={},routine={kids:[],school:{},nights:{}},ov={},pend={},loaded=false;
+var who=null,names={a:"Parent A",b:"Parent B"},extras={},reqs=[],exps=[],acts=[],special={},care={},notes={},kidInfo={},ovSet={},routine={kids:[],school:{},nights:{}},ov={},pend={},loaded=false;
 var today=todayKey(),sel=today,view={y:+today.slice(0,4),m:+today.slice(5,7)-1},tab="cal";
 
 function nm(p){return names[p]||(p==="a"?"Parent A":"Parent B")}
@@ -247,7 +248,7 @@ function api(path,body){
     .then(function(r){if(r.status===401){showLogin();throw new Error("auth")}return r.json().then(function(j){if(!r.ok)throw new Error(j.error||"Request failed");return j})});
 }
 function load(){
-  return api("/state").then(function(s){$("#outBtn").hidden=false;who=s.who;names=s.names;extras=s.extras||{};reqs=s.requests||[];exps=s.expenses||[];acts=s.activities||[];special=s.special||{};care=s.care||{};notes=s.notes||{};routine=s.routine||routine;loaded=true;renderAll();resendPush()}).catch(function(){});
+  return api("/state").then(function(s){$("#outBtn").hidden=false;who=s.who;names=s.names;extras=s.extras||{};reqs=s.requests||[];exps=s.expenses||[];acts=s.activities||[];special=s.special||{};care=s.care||{};notes=s.notes||{};kidInfo=s.kidInfo||{};routine=s.routine||routine;loaded=true;renderAll();resendPush()}).catch(function(){});
 }
 
 /* ---------- rendering ---------- */
@@ -657,6 +658,7 @@ function renderKids(){
     c.appendChild(row);l.appendChild(c);
   });
   V.appendChild(l);
+  renderKidInfo(V);
   V.appendChild(el("h2",null,"Weekly routine"));
   var c=el("div","card");
   c.appendChild(el("p",null,routine.kids.length?routine.kids.join(", "):"No children added yet."));
@@ -743,7 +745,10 @@ $("#kidsForm").addEventListener("submit",function(ev){
       .catch(function(e){$("#kSend").disabled=false;if(e.message==="auth")return;var x=$("#kErr");x.hidden=false;x.textContent=e.message});
     return;
   }
-  if(kmode==="routine"){
+  if(kmode==="kidinfo"){
+    var inf={};KF.forEach(function(f){inf[f[0]]=g("ki_"+f[0])});
+    body={name:kidName,info:inf};path="/kidinfo";
+  }else if(kmode==="routine"){
     body={kids:g("kKids").split(",").map(function(x){return x.trim()}).filter(Boolean),dropTime:g("kDropT"),pickTime:g("kPickT"),school:{},nights:{}};
     for(var d=0;d<=6;d++){if(d>=1&&d<=5)body.school[d]={drop:g("kD"+d),pick:g("kP"+d)};body.nights[d]=g("kN"+d)}
     path="/routine";
@@ -805,6 +810,45 @@ function openSpecial(){
   dlgFoot(F,"Add day");$("#kidsDlg").showModal();
 }
 $("#addSpecial").onclick=openSpecial;
+
+/* ---------- kids' info ---------- */
+var KF=[["birthday","Birthday","date"],["school","School"],["teacher","Teacher"],["schoolPhone","School phone","tel"],
+  ["doctor","Doctor"],["doctorPhone","Doctor's phone","tel"],["dentist","Dentist"],["dentistPhone","Dentist's phone","tel"],
+  ["allergies","Allergies"],["medication","Medication"],["clothes","Clothing size"],["shoes","Shoe size"],["other","Other notes","textarea"]];
+function age(b){var t=new Date(),y=t.getFullYear()-+b.slice(0,4);if(t.getMonth()+1<+b.slice(5,7)||t.getMonth()+1==+b.slice(5,7)&&t.getDate()<+b.slice(8,10))y--;return y}
+function renderKidInfo(V){
+  if(!routine.kids.length)return;
+  V.appendChild(el("h2",null,"About the kids"));
+  var l=el("div","list");
+  routine.kids.forEach(function(name){
+    var info=kidInfo[name]||{},c=el("div","card req");
+    var h=el("div","row");h.style.justifyContent="space-between";h.style.alignItems="baseline";
+    h.appendChild(el("h3",null,name));if(info.birthday)h.appendChild(el("span","muted small",age(info.birthday)+", born "+fmt(info.birthday,true)));
+    c.appendChild(h);
+    var dl=el("div");dl.style.display="grid";dl.style.gridTemplateColumns="auto 1fr";dl.style.gap=".25rem .8rem";dl.style.fontSize=".95rem";
+    var any=false;
+    KF.forEach(function(f){
+      if(f[0]==="birthday"||!info[f[0]])return;any=true;
+      dl.appendChild(el("span","muted",f[1]));
+      var v=el(f[2]==="tel"?"a":"span",null,info[f[0]]);if(f[2]==="tel")v.href="tel:"+info[f[0]].replace(/[^\d+]/g,"");
+      v.style.whiteSpace="pre-wrap";v.style.overflowWrap="anywhere";dl.appendChild(v);
+    });
+    if(any)c.appendChild(dl);else c.appendChild(el("p","muted","Nothing added yet."));
+    var ed=el("button","btn sec small","Edit");ed.type="button";ed.onclick=function(){openKidInfo(name)};
+    var row=el("div","row");row.appendChild(ed);
+    if(info.updatedBy)row.appendChild(el("span","muted small","Last changed by "+nm(info.updatedBy)));
+    row.style.alignItems="center";c.appendChild(row);
+    l.appendChild(c);
+  });
+  V.appendChild(l);
+}
+var kidName="";
+function openKidInfo(name){
+  kmode="kidinfo";kidName=name;var info=kidInfo[name]||{},F=$("#kidsForm");F.textContent="";
+  F.appendChild(el("h2",null,name));
+  KF.forEach(function(f){F.appendChild(field("ki_"+f[0],f[1],f[2]||"text",info[f[0]],f[2]==="textarea"?{maxlength:1000}:{maxlength:200}))});
+  dlgFoot(F,"Save");$("#kidsDlg").showModal();
+}
 
 /* ---------- handover notes ---------- */
 // Don't refresh under someone typing a note.

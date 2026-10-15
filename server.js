@@ -24,7 +24,7 @@ if (!PARENTS.a.pass || !PARENTS.b.pass) {
 
 // ---------- tiny JSON file store ----------
 fs.mkdirSync(DATA_DIR, { recursive: true });
-let db = { extras: {}, requests: [], expenses: [], activities: [], routine: null, special: {}, care: {}, push: { a: [], b: [] }, feeds: {}, notes: {} };
+let db = { extras: {}, requests: [], expenses: [], activities: [], routine: null, special: {}, care: {}, push: { a: [], b: [] }, feeds: {}, notes: {}, kidInfo: {} };
 try { db = Object.assign(db, JSON.parse(fs.readFileSync(DB_FILE, "utf8"))); } catch (e) { /* first run */ }
 function save() {
   const tmp = DB_FILE + ".tmp";
@@ -163,6 +163,7 @@ app.get("/api/state", auth, (req, res) => {
     special: db.special,
     care: db.care,
     notes: db.notes,
+    kidInfo: db.kidInfo,
     routine: db.routine || defaultRoutine(),
   });
 });
@@ -406,6 +407,25 @@ app.post("/api/special/:date/delete", auth, (req, res) => {
   delete db.special[req.params.date];
   save();
   res.json({ ok: true });
+});
+
+// ---------- kids' info ----------
+// Doctors, allergies, sizes, teachers and the like, one record per child.
+const KID_FIELDS = ["birthday", "school", "teacher", "schoolPhone", "doctor", "doctorPhone", "dentist", "dentistPhone",
+  "allergies", "medication", "clothes", "shoes", "other"];
+app.post("/api/kidinfo", auth, (req, res) => {
+  const b = req.body || {}, kids = (db.routine || defaultRoutine()).kids;
+  if (!kids.includes(b.name)) return res.status(400).json({ error: "Unknown child" });
+  const info = {};
+  for (const f of KID_FIELDS) { const v = str((b.info || {})[f], f === "other" ? 1000 : 200); if (v) info[f] = v; }
+  if (info.birthday && !isDate(info.birthday)) delete info.birthday;
+  info.updatedBy = req.session.who;
+  info.updatedAt = new Date().toISOString();
+  db.kidInfo = db.kidInfo || {};
+  db.kidInfo[b.name] = info;
+  save();
+  tell(req.session.who, "Updated " + b.name + "'s info", "kids");
+  res.json(info);
 });
 
 // ---------- handover notes ----------

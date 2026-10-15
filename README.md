@@ -23,6 +23,10 @@ Care can be added to a phone's home screen so it opens like an app (on iPhone: S
 
 Notifications use web push, so no email or SMS account is needed. The keys are created on first start and saved as `vapid.json` in `DATA_DIR`.
 
+## Kids' info
+
+The Kids tab has a card for each child with their birthday, school, teacher, doctor, dentist, allergies, medication, sizes and other notes. Phone numbers can be tapped to call. Either parent can edit them, and the other gets a notification.
+
 ## Handover notes
 
 Tapping a day shows any handover (who the children are going from and to, based on where they sleep) and lets either parent add short notes, like "Kendall's inhaler is in her bag". Days with notes get a small square on the calendar, and the other parent gets a notification.
