@@ -30,11 +30,49 @@ function save() {
   fs.renameSync(tmp, DB_FILE);
 }
 
+// ---------- session store ----------
+// Sessions are kept in a JSON file next to the data so a redeploy doesn't
+// sign everyone out. With two users this stays tiny.
+const SESS_FILE = path.join(DATA_DIR, "sessions.json");
+class FileStore extends session.Store {
+  constructor() {
+    super();
+    this.s = {};
+    try { this.s = JSON.parse(fs.readFileSync(SESS_FILE, "utf8")); } catch (e) { /* first run */ }
+    this.prune();
+  }
+  prune() {
+    const now = Date.now();
+    for (const id of Object.keys(this.s)) {
+      const exp = this.s[id].cookie && this.s[id].cookie.expires;
+      if (exp && new Date(exp).getTime() <= now) delete this.s[id];
+    }
+  }
+  write() {
+    const tmp = SESS_FILE + ".tmp";
+    fs.writeFileSync(tmp, JSON.stringify(this.s));
+    fs.renameSync(tmp, SESS_FILE);
+  }
+  get(id, cb) {
+    const v = this.s[id];
+    const exp = v && v.cookie && v.cookie.expires;
+    if (exp && new Date(exp).getTime() <= Date.now()) { delete this.s[id]; return cb(null, null); }
+    cb(null, v || null);
+  }
+  set(id, sess, cb) { this.s[id] = JSON.parse(JSON.stringify(sess)); this.prune(); this.write(); cb && cb(null); }
+  destroy(id, cb) { delete this.s[id]; this.write(); cb && cb(null); }
+  touch(id, sess, cb) { if (this.s[id]) { this.s[id].cookie = sess.cookie; this.write(); } cb && cb(null); }
+}
+
+if (!process.env.SESSION_SECRET)
+  console.warn("SESSION_SECRET is not set, so everyone will be signed out whenever the server restarts.");
+
 // ---------- app ----------
 const app = express();
 app.set("trust proxy", 1);
 app.use(express.json({ limit: "32kb" }));
 app.use(session({
+  store: new FileStore(),
   secret: process.env.SESSION_SECRET || crypto.randomBytes(32).toString("hex"),
   name: "care.sid",
   resave: false,
@@ -48,6 +86,9 @@ function auth(req, res, next) {
   if (req.session && isParent(req.session.who)) return next();
   res.status(401).json({ error: "Not signed in" });
 }
+
+// Names only, so the sign-in screen can show who's who before anyone signs in.
+app.get("/api/names", (req, res) => res.json({ a: PARENTS.a.name, b: PARENTS.b.name }));
 
 app.post("/api/login", (req, res) => {
   const { who, password } = req.body || {};
