@@ -227,7 +227,7 @@ function todayKey(){var t=new Date();return t.getFullYear()+"-"+String(t.getMont
 function ok(v){return v==="a"||v==="b"}
 function oth(p){return p==="a"?"b":"a"}
 
-var who=null,names={a:"Parent A",b:"Parent B"},extras={},reqs=[],exps=[],acts=[],special={},care={},notes={},kidInfo={},runs={},ovSet={},routine={kids:[],school:{},nights:{}},ov={},pend={},loaded=false;
+var who=null,names={a:"Parent A",b:"Parent B"},extras={},reqs=[],exps=[],acts=[],special={},care={},notes={},kidInfo={},runs={},noVolume=false,ovSet={},routine={kids:[],school:{},nights:{}},ov={},pend={},loaded=false;
 var today=todayKey(),sel=today,view={y:+today.slice(0,4),m:+today.slice(5,7)-1},tab="cal";
 
 function nm(p){return names[p]||(p==="a"?"Parent A":"Parent B")}
@@ -248,7 +248,7 @@ function api(path,body){
     .then(function(r){if(r.status===401){showLogin();throw new Error("auth")}return r.json().then(function(j){if(!r.ok)throw new Error(j.error||"Request failed");return j})});
 }
 function load(){
-  return api("/state").then(function(s){$("#outBtn").hidden=false;who=s.who;names=s.names;extras=s.extras||{};reqs=s.requests||[];exps=s.expenses||[];acts=s.activities||[];special=s.special||{};care=s.care||{};notes=s.notes||{};kidInfo=s.kidInfo||{};runs=s.runs||{};routine=s.routine||routine;loaded=true;renderAll();resendPush()}).catch(function(){});
+  return api("/state").then(function(s){$("#outBtn").hidden=false;who=s.who;names=s.names;extras=s.extras||{};reqs=s.requests||[];exps=s.expenses||[];acts=s.activities||[];special=s.special||{};care=s.care||{};notes=s.notes||{};kidInfo=s.kidInfo||{};runs=s.runs||{};routine=s.routine||routine;noVolume=!!s.noVolume;loaded=true;renderAll();resendPush()}).catch(function(){});
 }
 
 /* ---------- rendering ---------- */
@@ -1009,7 +1009,10 @@ function renderSetup(){
   if(!loaded){S.hidden=true;return}
   var canPush=swReg&&"PushManager" in window&&"Notification" in window;
   var p,b;
-  if(isIOS&&!standalone){
+  if(noVolume){
+    p=el("p",null,"Warning: this app isn't saving to a Railway volume, so everything entered is wiped on the next update. In Railway, add a volume mounted at /data.");
+    p.style.color="var(--err, #b42318)";p.style.fontWeight="600";S.appendChild(p);
+  }else if(isIOS&&!standalone){
     p=el("p",null,"To get notifications on your iPhone, tap the Share button, then Add to Home Screen, and open Care from there.");
     S.appendChild(p);
   }else if(canPush&&!pushOn&&Notification.permission!=="denied"){

@@ -8,7 +8,13 @@ const webpush = require("web-push");
 const R = require("./public/roster.js");
 
 const PORT = process.env.PORT || 3000;
-const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "data");
+// On Railway, an attached volume sets RAILWAY_VOLUME_MOUNT_PATH; use it so
+// data survives redeploys even if DATA_DIR wasn't set.
+const DATA_DIR = process.env.DATA_DIR || process.env.RAILWAY_VOLUME_MOUNT_PATH || path.join(__dirname, "data");
+// Running on Railway with no volume: everything saved is lost on the next deploy.
+const NO_VOLUME = !!process.env.RAILWAY_ENVIRONMENT_NAME && !process.env.RAILWAY_VOLUME_MOUNT_PATH;
+if (NO_VOLUME) console.error("WARNING: no Railway volume attached. Data in " + DATA_DIR + " will be lost on the next deploy.");
+else console.log("Saving data in " + DATA_DIR);
 const DB_FILE = path.join(DATA_DIR, "care.json");
 
 // Two parents. Names and passwords come from environment variables so
@@ -167,6 +173,7 @@ app.get("/api/state", auth, (req, res) => {
     notes: db.notes,
     kidInfo: db.kidInfo,
     runs: db.runs,
+    noVolume: NO_VOLUME,
     routine: db.routine || defaultRoutine(),
   });
 });
