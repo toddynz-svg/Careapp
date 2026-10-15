@@ -4,6 +4,7 @@ const session = require("express-session");
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
+const webpush = require("web-push");
 
 const PORT = process.env.PORT || 3000;
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "data");
@@ -22,7 +23,7 @@ if (!PARENTS.a.pass || !PARENTS.b.pass) {
 
 // ---------- tiny JSON file store ----------
 fs.mkdirSync(DATA_DIR, { recursive: true });
-let db = { extras: {}, requests: [], expenses: [], activities: [], routine: null, special: {}, care: {} };
+let db = { extras: {}, requests: [], expenses: [], activities: [], routine: null, special: {}, care: {}, push: { a: [], b: [] } };
 try { db = Object.assign(db, JSON.parse(fs.readFileSync(DB_FILE, "utf8"))); } catch (e) { /* first run */ }
 function save() {
   const tmp = DB_FILE + ".tmp";
@@ -87,6 +88,55 @@ function auth(req, res, next) {
   res.status(401).json({ error: "Not signed in" });
 }
 
+// ---------- phone notifications (web push) ----------
+// Keys are made on first start and kept with the data, so existing
+// subscriptions keep working across redeploys.
+const VAPID_FILE = path.join(DATA_DIR, "vapid.json");
+let vapid;
+try { vapid = JSON.parse(fs.readFileSync(VAPID_FILE, "utf8")); } catch (e) {
+  vapid = webpush.generateVAPIDKeys();
+  fs.writeFileSync(VAPID_FILE, JSON.stringify(vapid));
+}
+webpush.setVapidDetails("mailto:care-calendar@example.invalid", vapid.publicKey, vapid.privateKey);
+const money = (c) => "$" + (c / 100).toFixed(2);
+const fmtDay = (k) => new Date(k + "T00:00:00Z").toLocaleDateString("en-NZ", { timeZone: "UTC", weekday: "short", day: "numeric", month: "short" });
+
+// Tell the other parent about something one parent did. Never blocks the reply.
+function tell(fromWho, body, tag) {
+  const to = fromWho === "a" ? "b" : "a";
+  const subs = (db.push && db.push[to]) || [];
+  if (!subs.length) return;
+  const payload = JSON.stringify({ title: PARENTS[fromWho].name, body, tag: tag || "care" });
+  subs.forEach((sub) => {
+    webpush.sendNotification(sub, payload, { TTL: 60 * 60 * 24 }).catch((err) => {
+      if (err.statusCode === 404 || err.statusCode === 410) {
+        db.push[to] = db.push[to].filter((x) => x.endpoint !== sub.endpoint);
+        save();
+      } else console.error("push failed", err.statusCode || err.message);
+    });
+  });
+}
+
+app.get("/api/push/key", (req, res) => res.json({ key: vapid.publicKey }));
+app.post("/api/push/subscribe", auth, (req, res) => {
+  const sub = (req.body || {}).sub;
+  if (!sub || typeof sub.endpoint !== "string" || !/^https:\/\//.test(sub.endpoint) || !sub.keys) return res.status(400).json({ error: "Bad subscription" });
+  const who = req.session.who;
+  db.push = db.push || { a: [], b: [] };
+  for (const p of ["a", "b"]) db.push[p] = (db.push[p] || []).filter((x) => x.endpoint !== sub.endpoint);
+  db.push[who].push({ endpoint: sub.endpoint, keys: { p256dh: String(sub.keys.p256dh), auth: String(sub.keys.auth) } });
+  db.push[who] = db.push[who].slice(-10);
+  save();
+  res.json({ ok: true });
+});
+app.post("/api/push/unsubscribe", auth, (req, res) => {
+  const ep = (req.body || {}).endpoint;
+  db.push = db.push || { a: [], b: [] };
+  for (const p of ["a", "b"]) db.push[p] = (db.push[p] || []).filter((x) => x.endpoint !== ep);
+  save();
+  res.json({ ok: true });
+});
+
 // Names only, so the sign-in screen can show who's who before anyone signs in.
 app.get("/api/names", (req, res) => res.json({ a: PARENTS.a.name, b: PARENTS.b.name }));
 
@@ -133,6 +183,9 @@ app.post("/api/requests", auth, (req, res) => {
   };
   db.requests.push(r);
   save();
+  const days = Object.keys(changes).sort();
+  tell(r.from, "New request: " + ({ swap: "swap weekends", off: "weekend off", holiday: "holiday", change: "change care days" })[r.type] +
+    ", " + fmtDay(days[0]) + (days.length > 1 ? " to " + fmtDay(days[days.length - 1]) : ""), "req");
   res.json(r);
 });
 
@@ -148,6 +201,7 @@ app.post("/api/requests/:id/status", auth, (req, res) => {
   r.respondedAt = new Date().toISOString();
   if (typeof reply === "string" && reply.trim()) r.reply = reply.trim().slice(0, 300);
   save();
+  if (!mine) tell(req.session.who, (status === "approved" ? "Agreed to" : "Declined") + " your request" + (r.reply ? ": " + r.reply : ""), "req");
   res.json(r);
 });
 
@@ -189,6 +243,7 @@ app.post("/api/expenses", auth, (req, res) => {
   }, v);
   db.expenses.push(e);
   save();
+  tell(e.from, "New bill: " + e.title + ", " + money(e.total) + (e.due ? ", due " + fmtDay(e.due) : ""), "exp");
   res.json(e);
 });
 
@@ -220,6 +275,12 @@ app.post("/api/expenses/:id", auth, (req, res) => {
   e.updatedAt = new Date().toISOString();
   e.updatedBy = me;
   save();
+  const owedBy = e.payer === "a" ? "b" : "a";
+  const what = b.action === "billPaid" ? (e.billPaid ? "Paid the bill" : "Unmarked the bill as paid")
+    : b.action === "shareSent" ? (e.shareSent ? "Sent " + money(e.shares[owedBy]) : "Unmarked their share as sent")
+    : b.action === "shareReceived" ? (e.shareReceived ? "Got your " + money(e.shares[owedBy]) : "Unmarked your share as received")
+    : "Updated the bill";
+  tell(me, what + ": " + e.title, "exp");
   res.json(e);
 });
 
@@ -252,6 +313,7 @@ app.post("/api/routine", auth, (req, res) => {
   r.updatedBy = req.session.who;
   db.routine = r;
   save();
+  tell(req.session.who, "Changed the weekly routine (school runs and sleeping)", "kids");
   res.json(r);
 });
 
@@ -285,6 +347,7 @@ app.post("/api/activities", auth, (req, res) => {
   const a = Object.assign({ id: crypto.randomBytes(8).toString("hex"), by: req.session.who, createdAt: new Date().toISOString() }, v);
   db.activities.push(a);
   save();
+  tell(req.session.who, "Added " + a.kids.join(", ") + ": " + a.title, "kids");
   res.json(a);
 });
 
@@ -293,8 +356,9 @@ app.post("/api/activities/:id", auth, (req, res) => {
   if (i < 0) return res.status(404).json({ error: "Not found" });
   const b = req.body || {};
   if (b.action === "delete") {
-    db.activities.splice(i, 1);
+    const gone = db.activities.splice(i, 1)[0];
     save();
+    tell(req.session.who, "Removed " + gone.title, "kids");
     return res.json({ ok: true });
   }
   const v = activityFields(b, (db.routine || defaultRoutine()).kids);
@@ -303,6 +367,7 @@ app.post("/api/activities/:id", auth, (req, res) => {
   db.activities[i] = Object.assign({ id: old.id, by: old.by, createdAt: old.createdAt,
     updatedAt: new Date().toISOString(), updatedBy: req.session.who }, v);
   save();
+  tell(req.session.who, "Changed " + v.kids.join(", ") + ": " + v.title, "kids");
   res.json(db.activities[i]);
 });
 
@@ -318,6 +383,7 @@ app.post("/api/special", auth, (req, res) => {
     kids: Array.isArray(b.kids) ? b.kids.filter((k) => kids.includes(k)) : [],
     by: req.session.who, at: new Date().toISOString() };
   save();
+  tell(req.session.who, "Added a special day: " + label + ", " + fmtDay(b.date), "cal");
   res.json(db.special[b.date]);
 });
 // Who has care on a holiday or special day, set directly by either parent.
@@ -329,6 +395,7 @@ app.post("/api/care", auth, (req, res) => {
   else if (isParent(b.who)) db.care[b.date] = { who: b.who, by: req.session.who, at: new Date().toISOString() };
   else return res.status(400).json({ error: "Bad parent" });
   save();
+  if (b.who) tell(req.session.who, PARENTS[b.who].name + " has care on " + fmtDay(b.date), "cal");
   res.json({ ok: true });
 });
 

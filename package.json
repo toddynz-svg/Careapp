@@ -4,7 +4,15 @@
   "private": true,
   "description": "Shared child care calendar for two parents",
   "main": "server.js",
-  "scripts": { "start": "node server.js" },
-  "engines": { "node": ">=18" },
-  "dependencies": { "express": "^4.19.2", "express-session": "^1.18.0" }
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "express-session": "^1.18.0",
+    "web-push": "^3.6.7"
+  }
 }

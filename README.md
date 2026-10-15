@@ -17,6 +17,12 @@ The Kids tab holds the weekly routine and the children's activities.
 - Tapping a day on the calendar shows that day's school runs, activities and where the children are sleeping.
 - School runs only show on school days: `SCHOOLS` near the top of the script in `public/index.html` lists each school's children, terms and extra closed days. Special days can also be marked as no school for chosen children.
 
+## Phone app and notifications
+
+Care can be added to a phone's home screen so it opens like an app (on iPhone: Share, then Add to Home Screen; on Android the app offers an Install button). Each parent can then tap **Turn on** to get a notification when the other sends or answers a request, adds or updates a bill, changes an activity or the weekly routine, adds a special day, or sets holiday care. On iPhone this needs iOS 16.4 or later and only works from the home-screen app.
+
+Notifications use web push, so no email or SMS account is needed. The keys are created on first start and saved as `vapid.json` in `DATA_DIR`.
+
 ## Run it locally
 
 ```

@@ -4,6 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Care calendar</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#1b2430">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Care">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@600;700&family=Figtree:wght@400;500;600&display=swap">
 <style>
 :root{
@@ -129,6 +134,8 @@ input[type=number]{width:100%;min-height:2.9rem;padding:.55rem .7rem;border:1px 
 .days .opt span{min-height:2.5rem;padding:.2rem}
 .checks{display:flex;flex-wrap:wrap;gap:.4rem}
 .checks .opt span{padding:.4rem .9rem}
+.setup{display:flex;flex-wrap:wrap;align-items:center;gap:.5rem;margin:.8rem 0 0;padding:.6rem .8rem;background:var(--surface);border:1px solid var(--line);border-radius:.7rem;font-size:.92rem}
+.setup p{margin:0;flex:1 1 12rem}
 [hidden]{display:none!important}
 </style>
 </head>
@@ -141,6 +148,8 @@ input[type=number]{width:100%;min-height:2.9rem;padding:.55rem .7rem;border:1px 
     </div>
     <button class="ghost" id="outBtn" type="button">Sign out</button>
   </div>
+
+  <div class="setup" id="setup" hidden></div>
 
   <div class="tabs" role="tablist">
     <button role="tab" id="tabCal" aria-selected="true" type="button">Calendar</button>
@@ -273,7 +282,7 @@ function api(path,body){
     .then(function(r){if(r.status===401){showLogin();throw new Error("auth")}return r.json().then(function(j){if(!r.ok)throw new Error(j.error||"Request failed");return j})});
 }
 function load(){
-  return api("/state").then(function(s){$("#outBtn").hidden=false;who=s.who;names=s.names;extras=s.extras||{};reqs=s.requests||[];exps=s.expenses||[];acts=s.activities||[];special=s.special||{};care=s.care||{};routine=s.routine||routine;loaded=true;renderAll()}).catch(function(){});
+  return api("/state").then(function(s){$("#outBtn").hidden=false;who=s.who;names=s.names;extras=s.extras||{};reqs=s.requests||[];exps=s.expenses||[];acts=s.activities||[];special=s.special||{};care=s.care||{};routine=s.routine||routine;loaded=true;renderAll();resendPush()}).catch(function(){});
 }
 
 /* ---------- rendering ---------- */
@@ -371,7 +380,7 @@ function renderReqs(){
   groups.forEach(function(g){if(!g[1].length)return;any=true;V.appendChild(el("h2",null,g[0]));var l=el("div","list");g[1].forEach(function(r){l.appendChild(reqCard(r))});V.appendChild(l)});
   if(!any)V.appendChild(el("p","muted","No requests yet. Use New request to ask for a swap, a weekend off, a holiday or a change of care days."));
 }
-function renderAll(){recompute();renderHeader();renderCal();renderDetail();renderUpcoming();renderSpecials();renderReqs();renderExps();renderKids()}
+function renderAll(){recompute();renderHeader();renderCal();renderDetail();renderUpcoming();renderSpecials();renderReqs();renderExps();renderKids();if(typeof renderSetup==="function")renderSetup()}
 function setTab(t){tab=t;
   [["cal","#calView","#tabCal"],["req","#reqView","#tabReq"],["exp","#expView","#tabExp"],["kids","#kidsView","#tabKids"]].forEach(function(x){$(x[1]).hidden=t!==x[0];$(x[2]).setAttribute("aria-selected",t===x[0])});
   $("#newBtn").textContent=t==="exp"?"Add a bill":t==="kids"?"Add an activity":"New request";
@@ -869,6 +878,56 @@ function openSpecial(){
   dlgFoot(F,"Add day");$("#kidsDlg").showModal();
 }
 $("#addSpecial").onclick=openSpecial;
+
+/* ---------- install as an app, and notifications ---------- */
+var swReg=null,installEvt=null,pushOn=false;
+var isIOS=/iphone|ipad|ipod/i.test(navigator.userAgent)||(navigator.platform==="MacIntel"&&navigator.maxTouchPoints>1);
+var standalone=window.matchMedia("(display-mode: standalone)").matches||navigator.standalone===true;
+function b64ToBytes(s){s=s.replace(/-/g,"+").replace(/_/g,"/");s+="===".slice((s.length+3)%4);var r=atob(s),a=new Uint8Array(r.length);for(var i=0;i<r.length;i++)a[i]=r.charCodeAt(i);return a}
+function renderSetup(){
+  var S=$("#setup");S.textContent="";
+  if(!loaded){S.hidden=true;return}
+  var canPush=swReg&&"PushManager" in window&&"Notification" in window;
+  var p,b;
+  if(isIOS&&!standalone){
+    p=el("p",null,"To get notifications on your iPhone, tap the Share button, then Add to Home Screen, and open Care from there.");
+    S.appendChild(p);
+  }else if(canPush&&!pushOn&&Notification.permission!=="denied"){
+    S.appendChild(el("p",null,"Get a notification when "+nm(oth(who))+" sends a request, adds a bill or changes the kids' plans."));
+    b=el("button","btn small","Turn on");b.type="button";b.onclick=enablePush;S.appendChild(b);
+  }else if(installEvt){
+    S.appendChild(el("p",null,"Add Care to your home screen so it opens like an app."));
+    b=el("button","btn small","Install");b.type="button";b.onclick=function(){installEvt.prompt();installEvt.userChoice.then(function(){installEvt=null;renderSetup()})};S.appendChild(b);
+  }
+  S.hidden=!S.firstChild;
+}
+// Re-send this device's subscription once signed in, so it belongs to whoever is using it now.
+var resent=false;
+function resendPush(){
+  if(resent||!loaded||!swReg||!swReg.pushManager)return;resent=true;
+  swReg.pushManager.getSubscription().then(function(sub){if(sub)api("/push/subscribe",{sub:sub.toJSON()}).catch(function(){})});
+}
+function enablePush(){
+  Notification.requestPermission().then(function(perm){
+    if(perm!=="granted"){alertMsg("Notifications are blocked. You can allow them in your browser's settings for this site.");return renderSetup()}
+    return fetch("/api/push/key").then(function(r){return r.json()}).then(function(k){
+      return swReg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:b64ToBytes(k.key)});
+    }).then(function(sub){return api("/push/subscribe",{sub:sub.toJSON()})}).then(function(){pushOn=true;renderSetup()});
+  }).catch(function(e){alertMsg("Couldn't turn on notifications: "+e.message)});
+}
+window.addEventListener("beforeinstallprompt",function(e){e.preventDefault();installEvt=e;renderSetup()});
+if("serviceWorker" in navigator){
+  navigator.serviceWorker.register("/sw.js").then(function(reg){
+    swReg=reg;
+    if(!reg.pushManager)return renderSetup();
+    return reg.pushManager.getSubscription().then(function(sub){
+      pushOn=!!sub;
+      resendPush();renderSetup();
+    });
+  }).catch(function(){});
+}
+var startTab=(location.hash||"").slice(1);if(["req","exp","kids"].indexOf(startTab)>=0)setTab(startTab);
+window.addEventListener("hashchange",function(){var t=location.hash.slice(1);if(["cal","req","exp","kids"].indexOf(t)>=0)setTab(t)});
 
 /* ---------- login ---------- */
 var pick="a";
