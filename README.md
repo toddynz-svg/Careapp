@@ -23,6 +23,10 @@ Care can be added to a phone's home screen so it opens like an app (on iPhone: S
 
 Notifications use web push, so no email or SMS account is needed. The keys are created on first start and saved as `vapid.json` in `DATA_DIR`.
 
+## Handover notes
+
+Tapping a day shows any handover (who the children are going from and to, based on where they sleep) and lets either parent add short notes, like "Kendall's inhaler is in her bag". Days with notes get a small square on the calendar, and the other parent gets a notification.
+
 ## Phone calendar sync
 
 At the bottom of the Calendar tab, each parent can get a private calendar link and subscribe to it on their phone (or in Google Calendar via "From URL"). It shows who has the kids each day, every activity (marked when you're doing drop-off or pickup), special days, and the school runs that parent is doing. Phones refresh it on their own schedule, usually every hour or so. "Make a new link" stops the old link working.

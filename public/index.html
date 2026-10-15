@@ -66,10 +66,12 @@ h2{font:600 1.15rem/1.2 var(--display);margin:1.5rem 0 .6rem}
 .day.today span{text-decoration:underline;text-decoration-thickness:2px;text-underline-offset:4px}
 .day.sel{box-shadow:inset 0 0 0 2px var(--ink);border-radius:.5rem}
 .day.pend::after{content:"";position:absolute;inset:3px;border:2px dashed var(--ink);border-radius:.4rem;opacity:.55;pointer-events:none}
+.day.hasnote::before{content:"";position:absolute;top:4px;right:5px;width:6px;height:6px;border-radius:2px;background:currentColor;opacity:.7}
 .day i{position:absolute;left:50%;bottom:4px;width:5px;height:5px;margin-left:-2.5px;border-radius:50%;background:currentColor;opacity:.75}
 .key{display:flex;flex-wrap:wrap;gap:.3rem 1rem;margin-top:.8rem;font-size:.82rem;color:var(--muted)}
 .key span::before{content:"";display:inline-block;vertical-align:middle;margin-right:.35rem}
 .key .k1::before{width:5px;height:5px;border-radius:50%;background:currentColor}
+.key .k3::before{width:6px;height:6px;border-radius:2px;background:currentColor}
 .key .k2::before{width:.9rem;height:.9rem;border:2px dashed currentColor;border-radius:.25rem}
 .detail{margin-top:.8rem}
 .detail p{margin:.15rem 0}
@@ -168,7 +170,7 @@ input[type=number]{width:100%;min-height:2.9rem;padding:.55rem .7rem;border:1px 
         <button type="button" id="next" aria-label="Next month">›</button>
       </div>
       <div class="grid" id="grid"></div>
-      <div class="key"><span class="k1">Holiday or special day</span><span class="k2">Change waiting for an answer</span></div>
+      <div class="key"><span class="k1">Holiday or special day</span><span class="k2">Change waiting for an answer</span><span class="k3">Handover note</span></div>
     </div>
     <div class="card detail" id="detail"></div>
     <h2>Coming weekends</h2>
@@ -224,7 +226,7 @@ function todayKey(){var t=new Date();return t.getFullYear()+"-"+String(t.getMont
 function ok(v){return v==="a"||v==="b"}
 function oth(p){return p==="a"?"b":"a"}
 
-var who=null,names={a:"Parent A",b:"Parent B"},extras={},reqs=[],exps=[],acts=[],special={},care={},ovSet={},routine={kids:[],school:{},nights:{}},ov={},pend={},loaded=false;
+var who=null,names={a:"Parent A",b:"Parent B"},extras={},reqs=[],exps=[],acts=[],special={},care={},notes={},ovSet={},routine={kids:[],school:{},nights:{}},ov={},pend={},loaded=false;
 var today=todayKey(),sel=today,view={y:+today.slice(0,4),m:+today.slice(5,7)-1},tab="cal";
 
 function nm(p){return names[p]||(p==="a"?"Parent A":"Parent B")}
@@ -245,7 +247,7 @@ function api(path,body){
     .then(function(r){if(r.status===401){showLogin();throw new Error("auth")}return r.json().then(function(j){if(!r.ok)throw new Error(j.error||"Request failed");return j})});
 }
 function load(){
-  return api("/state").then(function(s){$("#outBtn").hidden=false;who=s.who;names=s.names;extras=s.extras||{};reqs=s.requests||[];exps=s.expenses||[];acts=s.activities||[];special=s.special||{};care=s.care||{};routine=s.routine||routine;loaded=true;renderAll();resendPush()}).catch(function(){});
+  return api("/state").then(function(s){$("#outBtn").hidden=false;who=s.who;names=s.names;extras=s.extras||{};reqs=s.requests||[];exps=s.expenses||[];acts=s.activities||[];special=s.special||{};care=s.care||{};notes=s.notes||{};routine=s.routine||routine;loaded=true;renderAll();resendPush()}).catch(function(){});
 }
 
 /* ---------- rendering ---------- */
@@ -271,6 +273,7 @@ function renderCal(){
     if(k===today)b.classList.add("today");
     if(k===sel)b.classList.add("sel");
     if(pend[k])b.classList.add("pend");
+    if(notes[k]&&notes[k].length)b.classList.add("hasnote");
     if(dayName(k))b.appendChild(el("i"));
     b.setAttribute("aria-label",fmt(k,true)+(o?", with "+nm(o):"")+(dayName(k)?", "+dayName(k):"")+(pend[k]?", change waiting for an answer":""));
     b.onclick=function(){sel=k;renderCal();renderDetail()};
@@ -288,6 +291,7 @@ function renderDetail(){
   if(schoolClosedText(sel))D.appendChild(el("p","muted",schoolClosedText(sel)));
   if(pend[sel])D.appendChild(el("p","muted","A change to this day is waiting for an answer."));
   var ag=agenda(sel);if(ag)D.appendChild(ag);
+  D.appendChild(handover(sel));
   if(loaded&&sel>=today){
     var b=el("button","btn sec","Request a change for this day");b.type="button";b.style.marginTop=".6rem";
     b.onclick=function(){openForm({type:"change",from:sel,to:sel,withWho:(o===who)?"them":"me"})};
@@ -802,6 +806,35 @@ function openSpecial(){
 }
 $("#addSpecial").onclick=openSpecial;
 
+/* ---------- handover notes ---------- */
+// Don't refresh under someone typing a note.
+function typing(){var a=document.activeElement;return !!(a&&a.tagName==="INPUT"&&a.closest&&a.closest(".wrap")&&a.value)}
+function handover(k){
+  var w=el("div");w.style.marginTop=".7rem";w.style.paddingTop=".6rem";w.style.borderTop="1px solid var(--line)";
+  var from=night(key(num(k)-1)),to=night(k);
+  var h=el("p","d");h.style.margin="0 0 .3rem";
+  if(from&&to&&from!==to){h.appendChild(document.createTextNode("Handover: "));h.appendChild(el("span","chip "+from,nm(from)));h.appendChild(document.createTextNode(" to "));h.appendChild(el("span","chip "+to,nm(to)))}
+  else h.textContent="Notes";
+  w.appendChild(h);
+  (notes[k]||[]).forEach(function(n){
+    var r=el("div","row");r.style.alignItems="flex-start";r.style.flexWrap="nowrap";r.style.margin=".35rem 0";
+    var t=el("p","note",n.text);t.style.flex="1";r.appendChild(t);
+    var meta=el("div","muted small",nm(n.by));meta.style.minWidth="4.5rem";
+    if(n.by===who){var x=el("button","ghost","Remove");x.type="button";x.style.minHeight="2.2rem";x.style.padding=".2rem .5rem";x.style.marginTop=".2rem";
+      x.onclick=function(){api("/notes/"+k+"/"+n.id+"/delete",{}).then(load)};meta.appendChild(el("br"));meta.appendChild(x)}
+    r.appendChild(meta);w.appendChild(r);
+  });
+  if(loaded){
+    var f=el("div","row");f.style.flexWrap="nowrap";f.style.marginTop=".3rem";
+    var i=el("input");i.type="text";i.maxLength=400;i.placeholder="Add a note, like what's in their bags";i.setAttribute("aria-label","Handover note");i.style.flex="1";
+    var b=el("button","btn small","Add");b.type="button";
+    b.onclick=function(){var v=i.value.trim();if(!v)return;b.disabled=true;api("/notes",{date:k,text:v}).then(load).catch(function(e){b.disabled=false;if(e.message!=="auth")alertMsg("That didn't save: "+e.message)})};
+    i.onkeydown=function(e){if(e.key==="Enter"){e.preventDefault();b.click()}};
+    f.appendChild(i);f.appendChild(b);w.appendChild(f);
+  }
+  return w;
+}
+
 /* ---------- calendar feed ---------- */
 var feedTok="";
 function renderFeed(){
@@ -901,7 +934,7 @@ $("#outBtn").onclick=function(){api("/logout",{}).then(function(){location.reloa
 renderAll();
 fetch("/api/names").then(function(r){return r.json()}).then(function(n){if(!loaded){names=n;renderAll();if($("#loginDlg").open)showLogin()}}).catch(function(){});
 load();
-setInterval(function(){if(loaded&&!$("#formDlg").open&&!$("#expDlg").open&&!$("#kidsDlg").open)load()},60000);
+setInterval(function(){if(loaded&&!$("#formDlg").open&&!$("#expDlg").open&&!$("#kidsDlg").open&&!typing())load()},60000);
 document.addEventListener("visibilitychange",function(){if(!document.hidden&&loaded)load()});
 })();
 </script>

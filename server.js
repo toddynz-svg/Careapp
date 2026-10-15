@@ -24,7 +24,7 @@ if (!PARENTS.a.pass || !PARENTS.b.pass) {
 
 // ---------- tiny JSON file store ----------
 fs.mkdirSync(DATA_DIR, { recursive: true });
-let db = { extras: {}, requests: [], expenses: [], activities: [], routine: null, special: {}, care: {}, push: { a: [], b: [] }, feeds: {} };
+let db = { extras: {}, requests: [], expenses: [], activities: [], routine: null, special: {}, care: {}, push: { a: [], b: [] }, feeds: {}, notes: {} };
 try { db = Object.assign(db, JSON.parse(fs.readFileSync(DB_FILE, "utf8"))); } catch (e) { /* first run */ }
 function save() {
   const tmp = DB_FILE + ".tmp";
@@ -162,6 +162,7 @@ app.get("/api/state", auth, (req, res) => {
     activities: db.activities,
     special: db.special,
     care: db.care,
+    notes: db.notes,
     routine: db.routine || defaultRoutine(),
   });
 });
@@ -403,6 +404,30 @@ app.post("/api/care", auth, (req, res) => {
 app.post("/api/special/:date/delete", auth, (req, res) => {
   if (!db.special[req.params.date]) return res.status(404).json({ error: "Not found" });
   delete db.special[req.params.date];
+  save();
+  res.json({ ok: true });
+});
+
+// ---------- handover notes ----------
+// Short notes for a day, usually a changeover: "Kendall's inhaler is in her bag".
+app.post("/api/notes", auth, (req, res) => {
+  const b = req.body || {}, text = str(b.text, 400);
+  if (!isDate(b.date)) return res.status(400).json({ error: "Choose a date" });
+  if (!text) return res.status(400).json({ error: "Write a note" });
+  db.notes = db.notes || {};
+  const n = { id: crypto.randomBytes(6).toString("hex"), by: req.session.who, text, at: new Date().toISOString() };
+  (db.notes[b.date] = db.notes[b.date] || []).push(n);
+  save();
+  tell(req.session.who, "Handover note for " + fmtDay(b.date) + ": " + text, "cal");
+  res.json(n);
+});
+app.post("/api/notes/:date/:id/delete", auth, (req, res) => {
+  const list = (db.notes || {})[req.params.date] || [];
+  const n = list.find((x) => x.id === req.params.id);
+  if (!n) return res.status(404).json({ error: "Not found" });
+  if (n.by !== req.session.who) return res.status(403).json({ error: "You can only remove your own notes" });
+  db.notes[req.params.date] = list.filter((x) => x !== n);
+  if (!db.notes[req.params.date].length) delete db.notes[req.params.date];
   save();
   res.json({ ok: true });
 });
