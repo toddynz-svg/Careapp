@@ -563,5 +563,9 @@ app.get("/cal/:token.ics", (req, res) => {
   res.send(L.map(fold).join("\r\n") + "\r\n");
 });
 
-app.use(express.static(path.join(__dirname, "public")));
+// Phones should always check for a newer page and scripts, so updates show
+// up without clearing the browser cache. Icons can be cached.
+app.use(express.static(path.join(__dirname, "public"), {
+  setHeaders: (res, file) => { if (/\.(html|js|webmanifest)$/.test(file)) res.setHeader("Cache-Control", "no-cache"); },
+}));
 app.listen(PORT, () => console.log("Care calendar listening on " + PORT));
