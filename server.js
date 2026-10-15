@@ -22,7 +22,7 @@ if (!PARENTS.a.pass || !PARENTS.b.pass) {
 
 // ---------- tiny JSON file store ----------
 fs.mkdirSync(DATA_DIR, { recursive: true });
-let db = { extras: {}, requests: [], expenses: [], activities: [], routine: null, special: {} };
+let db = { extras: {}, requests: [], expenses: [], activities: [], routine: null, special: {}, care: {} };
 try { db = Object.assign(db, JSON.parse(fs.readFileSync(DB_FILE, "utf8"))); } catch (e) { /* first run */ }
 function save() {
   const tmp = DB_FILE + ".tmp";
@@ -110,6 +110,7 @@ app.get("/api/state", auth, (req, res) => {
     expenses: db.expenses,
     activities: db.activities,
     special: db.special,
+    care: db.care,
     routine: db.routine || defaultRoutine(),
   });
 });
@@ -306,8 +307,7 @@ app.post("/api/activities/:id", auth, (req, res) => {
 });
 
 // ---------- special days ----------
-// Extra dates such as teacher-only days. Who has care on them goes through
-// the normal request flow, so the other parent still agrees to it.
+// Extra dates such as teacher-only days.
 app.post("/api/special", auth, (req, res) => {
   const b = req.body || {};
   if (!isDate(b.date)) return res.status(400).json({ error: "Choose a date" });
@@ -317,6 +317,18 @@ app.post("/api/special", auth, (req, res) => {
   save();
   res.json(db.special[b.date]);
 });
+// Who has care on a holiday or special day, set directly by either parent.
+// The calendar applies these and agreed requests in time order.
+app.post("/api/care", auth, (req, res) => {
+  const b = req.body || {};
+  if (!isDate(b.date)) return res.status(400).json({ error: "Choose a date" });
+  if (b.who === "") delete db.care[b.date];
+  else if (isParent(b.who)) db.care[b.date] = { who: b.who, by: req.session.who, at: new Date().toISOString() };
+  else return res.status(400).json({ error: "Bad parent" });
+  save();
+  res.json({ ok: true });
+});
+
 app.post("/api/special/:date/delete", auth, (req, res) => {
   if (!db.special[req.params.date]) return res.status(404).json({ error: "Not found" });
   delete db.special[req.params.date];

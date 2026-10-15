@@ -53,7 +53,7 @@ Redeploys happen automatically on every push to the repo.
 
 ## Holidays and special days
 
-Below the coming weekends, the Calendar tab lists the next public holidays and special days. Choosing who has care on one sends a request, so the other parent agrees to it like any other change. **Add a special day** adds dates like teacher-only days, with a name, whether there's no school (which hides that day's school runs), and who has care.
+Below the coming weekends, the Calendar tab lists the next public holidays and special days. Either parent can set who has care on one directly; the list shows who set it. If an agreed request later changes the same day, the most recent one wins. **Add a special day** adds dates like teacher-only days, with a name, whether there's no school (which hides that day's school runs), and who has care.
 
 ## Changing the roster
 

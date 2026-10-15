@@ -224,7 +224,7 @@ function todayKey(){var t=new Date();return t.getFullYear()+"-"+String(t.getMont
 function ok(v){return v==="a"||v==="b"}
 function oth(p){return p==="a"?"b":"a"}
 
-var who=null,names={a:"Parent A",b:"Parent B"},extras={},reqs=[],exps=[],acts=[],special={},routine={kids:[],school:{},nights:{}},ov={},pend={},loaded=false;
+var who=null,names={a:"Parent A",b:"Parent B"},extras={},reqs=[],exps=[],acts=[],special={},care={},ovSet={},routine={kids:[],school:{},nights:{}},ov={},pend={},loaded=false;
 var today=todayKey(),sel=today,view={y:+today.slice(0,4),m:+today.slice(5,7)-1},tab="cal";
 
 function nm(p){return names[p]||(p==="a"?"Parent A":"Parent B")}
@@ -239,8 +239,12 @@ function pattern(k){
 function owner(k){if(ok(ov[k]))return ov[k];if(ok(extras[k]))return extras[k];return pattern(k)}
 function recompute(){
   ov={};pend={};
-  reqs.filter(function(r){return r.status==="approved"}).sort(function(x,y){return String(x.respondedAt||"").localeCompare(String(y.respondedAt||""))})
-    .forEach(function(r){for(var k in r.changes)ov[k]=r.changes[k]});
+  ovSet={};
+  // Agreed requests and directly set holiday care, applied oldest first so the latest wins.
+  var ev=[];
+  reqs.forEach(function(r){if(r.status==="approved")for(var k in r.changes)ev.push({k:k,p:r.changes[k],t:r.respondedAt||""})});
+  for(var k in care)ev.push({k:k,p:care[k].who,t:care[k].at||"",by:care[k].by});
+  ev.sort(function(x,y){return String(x.t).localeCompare(String(y.t))}).forEach(function(e){ov[e.k]=e.p;if(e.by)ovSet[e.k]=e.by;else delete ovSet[e.k]});
   reqs.forEach(function(r){if(r.status==="pending")for(var k in r.changes)pend[k]=1});
 }
 function runs(ch){
@@ -260,7 +264,7 @@ function api(path,body){
     .then(function(r){if(r.status===401){showLogin();throw new Error("auth")}return r.json().then(function(j){if(!r.ok)throw new Error(j.error||"Request failed");return j})});
 }
 function load(){
-  return api("/state").then(function(s){$("#outBtn").hidden=false;who=s.who;names=s.names;extras=s.extras||{};reqs=s.requests||[];exps=s.expenses||[];acts=s.activities||[];special=s.special||{};routine=s.routine||routine;loaded=true;renderAll()}).catch(function(){});
+  return api("/state").then(function(s){$("#outBtn").hidden=false;who=s.who;names=s.names;extras=s.extras||{};reqs=s.requests||[];exps=s.expenses||[];acts=s.activities||[];special=s.special||{};care=s.care||{};routine=s.routine||routine;loaded=true;renderAll()}).catch(function(){});
 }
 
 /* ---------- rendering ---------- */
@@ -296,7 +300,7 @@ function renderDetail(){
   var D=$("#detail"),o=owner(sel);D.textContent="";
   D.appendChild(el("p","d",fmt(sel,true)+(sel===today?" (today)":"")));
   var p=el("p");
-  if(o){p.appendChild(document.createTextNode("With "));p.appendChild(el("span","chip "+o,nm(o)));if(ok(ov[sel]))p.appendChild(el("span","muted small","  changed by agreement"))}
+  if(o){p.appendChild(document.createTextNode("With "));p.appendChild(el("span","chip "+o,nm(o)));if(ovSet[sel])p.appendChild(el("span","muted small","  set by "+nm(ovSet[sel])));else if(ok(ov[sel]))p.appendChild(el("span","muted small","  changed by agreement"))}
   else p.textContent="Not on the weekend roster.";
   D.appendChild(p);
   if(dayName(sel))D.appendChild(el("p","muted",dayName(sel)+(special[sel]&&special[sel].noSchool?", no school":"")));
@@ -770,7 +774,7 @@ $("#kidsForm").addEventListener("submit",function(ev){
   if(kmode==="special"){
     var sd=g("sDate"),sl=g("sLabel"),sw=g("sWho");
     $("#kSend").disabled=true;
-    api("/special",{date:sd,label:sl,noSchool:F.querySelector("#sNoSchool").checked}).then(function(){special[sd]={label:sl};return askCare(sd,sw,sl)})
+    api("/special",{date:sd,label:sl,noSchool:F.querySelector("#sNoSchool").checked}).then(function(){special[sd]={label:sl};return setCare(sd,sw)})
       .then(function(){$("#kidsDlg").close();load()})
       .catch(function(e){$("#kSend").disabled=false;if(e.message==="auth")return;var x=$("#kErr");x.hidden=false;x.textContent=e.message});
     return;
@@ -793,9 +797,9 @@ $("#kidsForm").addEventListener("submit",function(ev){
 
 /* ---------- holidays and special days ---------- */
 function dayName(k){return HOL[k]||(special[k]&&special[k].label)||""}
-function askCare(k,p,label){
+function setCare(k,p){
   if(!ok(p)||owner(k)===p)return Promise.resolve();
-  return api("/requests",{type:"change",changes:(function(){var c={};c[k]=p;return c})(),note:"Care on "+label+", "+fmt(k,true)});
+  return api("/care",{date:k,who:p});
 }
 function renderSpecials(){
   var U=$("#specials");U.textContent="";
@@ -807,18 +811,17 @@ function renderSpecials(){
     left.appendChild(el("div","muted small",dayName(k)+(special[k]&&special[k].noSchool?", no school":"")));
     li.appendChild(left);
     var right=el("div");right.style.textAlign="right";
-    if(pend[k])right.appendChild(el("span","muted small","Change waiting"));
-    else if(loaded){
+    if(loaded){
       var s=el("select");s.setAttribute("aria-label","Who has care on "+fmt(k,true));s.style.minWidth="8rem";s.style.minHeight="2.6rem";
       if(!o)s.appendChild(new Option("Who has care?",""));
       ["a","b"].forEach(function(p){s.appendChild(new Option(nm(p),p))});
       s.value=o||"";if(o)s.className="p"+o;
       s.onchange=function(){
         var p=s.value;if(!ok(p))return;
-        if(!confirm("Ask "+nm(oth(who))+" to agree that "+nm(p)+" has care on "+dayName(k)+"?")){s.value=o||"";return}
-        s.disabled=true;askCare(k,p,dayName(k)).then(load).catch(function(e){if(e.message!=="auth")alertMsg("That didn't send: "+e.message);load()});
+        s.disabled=true;setCare(k,p).then(load).catch(function(e){if(e.message!=="auth")alertMsg("That didn't save: "+e.message);load()});
       };
       right.appendChild(s);
+      if(ovSet[k])right.appendChild(el("div","muted small","Set by "+nm(ovSet[k])));
     }
     if(special[k]&&loaded){var rm=el("button","ghost","Remove");rm.type="button";rm.style.marginLeft=".4rem";rm.onclick=function(){if(confirm("Remove "+special[k].label+"?"))api("/special/"+k+"/delete",{}).then(load)};right.appendChild(rm)}
     li.appendChild(right);U.appendChild(li);
@@ -831,7 +834,6 @@ function openSpecial(){
   F.appendChild(field("sLabel","What is it?","text","",{maxlength:60,placeholder:"Teacher-only day"}));
   var l=el("label","opt");l.style.margin=".8rem 0 0";var i=el("input");i.type="checkbox";i.id="sNoSchool";i.checked=true;l.appendChild(i);l.appendChild(el("span",null,"No school this day"));F.appendChild(l);
   var w=el("div"),lb=el("label",null,"Who has care?");lb.htmlFor="sWho";w.appendChild(lb);w.appendChild(whoSelect("sWho","",false));F.appendChild(w);
-  F.appendChild(el("p","muted small",nm(oth(who))+" will be asked to agree to who has care, like any other change."));
   dlgFoot(F,"Add day");$("#kidsDlg").showModal();
 }
 $("#addSpecial").onclick=openSpecial;
