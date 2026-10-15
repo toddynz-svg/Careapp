@@ -43,8 +43,8 @@ h2{font:600 1.15rem/1.2 var(--display);margin:1.5rem 0 .6rem}
 .chip.a,.pa{background:var(--a);color:var(--a-ink)}
 .chip.b,.pb{background:var(--b);color:var(--b-ink)}
 .ghost{background:none;border:1px solid var(--line);border-radius:.6rem;padding:.5rem .8rem;min-height:2.75rem;font-weight:500;white-space:nowrap}
-.tabs{display:grid;grid-template-columns:1fr 1fr 1fr;margin:1rem 0;background:var(--surface);border:1px solid var(--line);border-radius:.8rem;padding:.25rem}
-.tabs button{padding:0 .2rem;border:0;background:none;border-radius:.6rem;min-height:2.75rem;font-weight:600;color:var(--muted)}
+.tabs{display:grid;grid-template-columns:repeat(4,1fr);margin:1rem 0;background:var(--surface);border:1px solid var(--line);border-radius:.8rem;padding:.25rem}
+.tabs button{padding:0 .1rem;font-size:.92rem;border:0;background:none;border-radius:.6rem;min-height:2.75rem;font-weight:600;color:var(--muted)}
 .tabs button[aria-selected="true"]{background:var(--accent);color:var(--accent-ink)}
 .count{display:inline-block;min-width:1.4rem;padding:0 .35rem;margin-left:.3rem;border-radius:1rem;background:var(--b);color:var(--b-ink);font-size:.8rem}
 .card{background:var(--surface);border:1px solid var(--line);border-radius:.9rem;padding:1rem}
@@ -114,6 +114,21 @@ textarea{min-height:4.5rem;resize:vertical}
 .sum .amt{font:700 1.5rem var(--display);font-variant-numeric:tabular-nums}
 input[type=number]{width:100%;min-height:2.9rem;padding:.55rem .7rem;border:1px solid var(--line);border-radius:.6rem;background:var(--bg)}
 .btn.small{min-height:2.4rem;padding:.35rem .8rem;font-size:.92rem}
+.req p,.card>p{margin:0}
+.card>p+p{margin-top:.3rem}
+.agenda{list-style:none;margin:.6rem 0 0;padding:.6rem 0 0;border-top:1px solid var(--line);display:grid;gap:.45rem}
+.agenda li{display:grid;grid-template-columns:4.2rem 1fr;gap:.6rem;align-items:baseline}
+.agenda .t{font-variant-numeric:tabular-nums;font-weight:600;color:var(--muted);font-size:.92rem}
+.agenda .who{font-size:.88rem;color:var(--muted)}
+.rt{width:100%;border-collapse:collapse;font-size:.92rem}
+.rt th,.rt td{text-align:left;padding:.35rem .3rem;border-bottom:1px solid var(--line)}
+.rt th{color:var(--muted);font-weight:600}
+.rt td:first-child{width:2.4rem;padding-left:0}
+.rt select{min-height:2.4rem;padding:.2rem .15rem;font-size:.85rem}
+.days{display:grid;grid-template-columns:repeat(7,1fr);gap:.3rem}
+.days .opt span{min-height:2.5rem;padding:.2rem}
+.checks{display:flex;flex-wrap:wrap;gap:.4rem}
+.checks .opt span{padding:.4rem .9rem}
 [hidden]{display:none!important}
 </style>
 </head>
@@ -131,6 +146,7 @@ input[type=number]{width:100%;min-height:2.9rem;padding:.55rem .7rem;border:1px 
     <button role="tab" id="tabCal" aria-selected="true" type="button">Calendar</button>
     <button role="tab" id="tabReq" aria-selected="false" type="button">Requests<span class="count" id="count" hidden></span></button>
     <button role="tab" id="tabExp" aria-selected="false" type="button">Expenses<span class="count" id="expCount" hidden></span></button>
+    <button role="tab" id="tabKids" aria-selected="false" type="button">Kids</button>
   </div>
 
   <p class="banner" id="banner" hidden></p>
@@ -152,12 +168,14 @@ input[type=number]{width:100%;min-height:2.9rem;padding:.55rem .7rem;border:1px 
 
   <section id="reqView" hidden></section>
   <section id="expView" hidden></section>
+  <section id="kidsView" hidden></section>
 </div>
 
 <div class="bar"><button class="btn" id="newBtn" type="button">New request</button></div>
 
 <dialog id="formDlg"><form id="form" method="dialog"></form></dialog>
 <dialog id="expDlg"><form id="expForm" method="dialog"></form></dialog>
+<dialog id="kidsDlg"><form id="kidsForm" method="dialog"></form></dialog>
 <dialog id="loginDlg"><form id="login" method="dialog">
   <h2>Care calendar</h2>
   <fieldset><legend>Who are you?</legend><div class="types" id="loginWho"></div></fieldset>
@@ -178,6 +196,9 @@ var PHASES=[
   {start:"2026-12-18",aFri:null},          // Christmas and summer break: not on the roster
   {start:"2027-01-22",aFri:"2027-01-29"}   // pattern restarts, Vickie first
 ];
+// School terms (first and last day). School runs only show on term days
+// that aren't public holidays. Check these against the school's own dates.
+var TERMS=[["2026-07-20","2026-09-25"],["2026-10-12","2026-12-17"],["2027-02-09","2027-04-09"],["2027-04-26","2027-07-02"],["2027-07-19","2027-09-24"],["2027-10-11","2027-12-16"]];
 // BLOCKS: school holiday weeks and other set days, which win over the pattern.
 var BLOCKS=[
   ["2026-09-28","2026-10-04","a"],["2026-10-05","2026-10-11","b"],
@@ -200,7 +221,7 @@ function todayKey(){var t=new Date();return t.getFullYear()+"-"+String(t.getMont
 function ok(v){return v==="a"||v==="b"}
 function oth(p){return p==="a"?"b":"a"}
 
-var who=null,names={a:"Parent A",b:"Parent B"},extras={},reqs=[],exps=[],ov={},pend={},loaded=false;
+var who=null,names={a:"Parent A",b:"Parent B"},extras={},reqs=[],exps=[],acts=[],routine={kids:[],school:{},nights:{}},ov={},pend={},loaded=false;
 var today=todayKey(),sel=today,view={y:+today.slice(0,4),m:+today.slice(5,7)-1},tab="cal";
 
 function nm(p){return names[p]||(p==="a"?"Parent A":"Parent B")}
@@ -236,7 +257,7 @@ function api(path,body){
     .then(function(r){if(r.status===401){showLogin();throw new Error("auth")}return r.json().then(function(j){if(!r.ok)throw new Error(j.error||"Request failed");return j})});
 }
 function load(){
-  return api("/state").then(function(s){$("#outBtn").hidden=false;who=s.who;names=s.names;extras=s.extras||{};reqs=s.requests||[];exps=s.expenses||[];loaded=true;renderAll()}).catch(function(){});
+  return api("/state").then(function(s){$("#outBtn").hidden=false;who=s.who;names=s.names;extras=s.extras||{};reqs=s.requests||[];exps=s.expenses||[];acts=s.activities||[];routine=s.routine||routine;loaded=true;renderAll()}).catch(function(){});
 }
 
 /* ---------- rendering ---------- */
@@ -277,6 +298,7 @@ function renderDetail(){
   D.appendChild(p);
   if(HOL[sel])D.appendChild(el("p","muted",HOL[sel]));
   if(pend[sel])D.appendChild(el("p","muted","A change to this day is waiting for an answer."));
+  var ag=agenda(sel);if(ag)D.appendChild(ag);
   if(loaded&&sel>=today){
     var b=el("button","btn sec","Request a change for this day");b.type="button";b.style.marginTop=".6rem";
     b.onclick=function(){openForm({type:"change",from:sel,to:sel,withWho:(o===who)?"them":"me"})};
@@ -332,10 +354,10 @@ function renderReqs(){
   groups.forEach(function(g){if(!g[1].length)return;any=true;V.appendChild(el("h2",null,g[0]));var l=el("div","list");g[1].forEach(function(r){l.appendChild(reqCard(r))});V.appendChild(l)});
   if(!any)V.appendChild(el("p","muted","No requests yet. Use New request to ask for a swap, a weekend off, a holiday or a change of care days."));
 }
-function renderAll(){recompute();renderHeader();renderCal();renderDetail();renderUpcoming();renderReqs();renderExps()}
+function renderAll(){recompute();renderHeader();renderCal();renderDetail();renderUpcoming();renderReqs();renderExps();renderKids()}
 function setTab(t){tab=t;
-  [["cal","#calView","#tabCal"],["req","#reqView","#tabReq"],["exp","#expView","#tabExp"]].forEach(function(x){$(x[1]).hidden=t!==x[0];$(x[2]).setAttribute("aria-selected",t===x[0])});
-  $("#newBtn").textContent=t==="exp"?"Add a bill":"New request";
+  [["cal","#calView","#tabCal"],["req","#reqView","#tabReq"],["exp","#expView","#tabExp"],["kids","#kidsView","#tabKids"]].forEach(function(x){$(x[1]).hidden=t!==x[0];$(x[2]).setAttribute("aria-selected",t===x[0])});
+  $("#newBtn").textContent=t==="exp"?"Add a bill":t==="kids"?"Add an activity":"New request";
 }
 function alertMsg(m){var b=$("#banner");b.hidden=!m;b.textContent=m||""}
 
@@ -598,6 +620,166 @@ $("#expForm").addEventListener("submit",function(ev){
     .catch(function(err){$("#expDlg").close();if(err.message!=="auth")alertMsg("That didn't save: "+err.message)});
 });
 
+/* ---------- kids: routine, activities, day agenda ---------- */
+var DN=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"],DNL=["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+function inTerm(k){var d=dow(num(k));if(d===0||d===6||HOL[k])return false;return TERMS.some(function(t){return k>=t[0]&&k<=t[1]})}
+// Where the children sleep the night of day k: with whoever has them that
+// day on the calendar, otherwise the weekly routine.
+function night(k){return owner(k)||(routine.nights||{})[dow(num(k))]||""}
+// "has": in the morning that's where they slept; later it's where they'll sleep.
+function resolve(w,k,morning){if(ok(w))return w;if(w!=="has")return "";return morning?night(key(num(k)-1)):night(k)}
+function time12(t){if(!t)return "";var h=+t.slice(0,2),m=t.slice(3);return ((h+11)%12+1)+(m==="00"?"":":"+m)+(h<12?"am":"pm")}
+function actsOn(k){
+  var d=dow(num(k));
+  return acts.filter(function(a){
+    if(a.repeat==="once")return a.date===k;
+    if(a.from&&k<a.from||a.until&&k>a.until)return false;
+    if(a.days.indexOf(d)<0)return false;
+    return true;
+  }).sort(function(x,y){return x.start.localeCompare(y.start)});
+}
+function whoChip(label,p){var s=el("span","who");s.appendChild(document.createTextNode(label+" "));s.appendChild(p?el("span","chip "+p,nm(p)):el("span",null,"not set"));return s}
+function agenda(k){
+  var items=[],d=dow(num(k)),sc=(routine.school||{})[d];
+  if(sc&&inTerm(k)){
+    items.push({t:routine.dropTime,title:"School drop-off",by:[["",resolve(sc.drop,k,true)]]});
+    items.push({t:routine.pickTime,title:"School pickup",by:[["",resolve(sc.pick,k,false)]]});
+  }
+  actsOn(k).forEach(function(a){
+    items.push({t:a.start,title:(a.kids.length===routine.kids.length&&a.kids.length>1?"All":a.kids.join(", "))+": "+a.title,sub:[a.end?"until "+time12(a.end):"",a.location].filter(Boolean).join(", "),
+      by:[a.drop?["Drop-off",resolve(a.drop,k,false)]:null,a.pick?["Pickup",resolve(a.pick,k,false)]:null].filter(Boolean)});
+  });
+  items.sort(function(x,y){return String(x.t).localeCompare(String(y.t))});
+  var n=night(k);
+  if(!items.length&&!n)return null;
+  var ul=el("ul","agenda");
+  items.forEach(function(it){
+    var li=el("li");li.appendChild(el("span","t",time12(it.t)));
+    var b=el("div");b.appendChild(el("div",null,it.title));
+    if(it.sub)b.appendChild(el("div","who",it.sub));
+    it.by.forEach(function(x){var r=el("div");r.appendChild(whoChip(x[0]?x[0]+":":"By",x[1]));b.appendChild(r)});
+    li.appendChild(b);ul.appendChild(li);
+  });
+  if(n){var li=el("li");li.appendChild(el("span","t","Night"));var b=el("div");b.appendChild(document.createTextNode("Sleeping at "));b.appendChild(el("span","chip "+n,nm(n)+"'s"));li.appendChild(b);ul.appendChild(li)}
+  return ul;
+}
+function whoLabel(w){return w==="has"?"Who has them":ok(w)?nm(w):"Not set"}
+function renderKids(){
+  var V=$("#kidsView");V.textContent="";
+  if(!loaded){V.appendChild(el("p","muted","Loading…"));return}
+  V.appendChild(el("h2",null,"Activities"));
+  if(!routine.kids.length){var p0=el("p","muted","Add the children's names in the weekly routine below first, then you can add their activities.");V.appendChild(p0)}
+  else if(!acts.length)V.appendChild(el("p","muted","No activities yet. Use Add an activity for things like dance class or swimming."));
+  var l=el("div","list");
+  acts.slice().sort(function(x,y){return x.title.localeCompare(y.title)}).forEach(function(a){
+    var c=el("div","card req");
+    var h=el("div","row");h.style.justifyContent="space-between";h.style.alignItems="baseline";
+    h.appendChild(el("h3",null,a.title));h.appendChild(el("span","muted small",a.kids.join(", ")));c.appendChild(h);
+    var when=a.repeat==="once"?fmt(a.date,true):"Every "+a.days.map(function(d){return DNL[d]}).join(", ")+(a.from?" from "+fmt(a.from,true):"")+(a.until?" until "+fmt(a.until,true):"");
+    c.appendChild(el("p",null,when+", "+time12(a.start)+(a.end?" to "+time12(a.end):"")));
+    if(a.location)c.appendChild(el("p","muted",a.location));
+    var r=el("p","small");r.textContent="Drop-off: "+whoLabel(a.drop)+". Pickup: "+whoLabel(a.pick)+".";c.appendChild(r);
+    if(a.note)c.appendChild(el("p","note",a.note));
+    var row=el("div","row");
+    var ed=el("button","btn sec small","Edit");ed.type="button";ed.onclick=function(){openAct(a)};row.appendChild(ed);
+    var del=el("button","btn sec small","Delete");del.type="button";del.onclick=function(){if(confirm("Delete "+a.title+"?"))api("/activities/"+a.id,{action:"delete"}).then(load).catch(function(e){if(e.message!=="auth")alertMsg("That didn't save: "+e.message)})};row.appendChild(del);
+    c.appendChild(row);l.appendChild(c);
+  });
+  V.appendChild(l);
+  V.appendChild(el("h2",null,"Weekly routine"));
+  var c=el("div","card");
+  c.appendChild(el("p",null,routine.kids.length?routine.kids.join(", "):"No children added yet."));
+  var t=el("table","rt"),hr=el("tr");["","Drop-off "+time12(routine.dropTime),"Pickup "+time12(routine.pickTime),"Sleeps at"].forEach(function(x){hr.appendChild(el("th",null,x))});t.appendChild(hr);
+  [1,2,3,4,5,6,0].forEach(function(d){
+    var tr=el("tr"),sc=(routine.school||{})[d];tr.appendChild(el("td",null,DN[d]));
+    tr.appendChild(el("td",null,sc?whoLabel(sc.drop):""));tr.appendChild(el("td",null,sc?whoLabel(sc.pick):""));
+    var n=(routine.nights||{})[d];tr.appendChild(el("td",null,ok(n)?nm(n):"Not set"));t.appendChild(tr);
+  });
+  c.appendChild(t);
+  c.appendChild(el("p","muted small","School runs show on term days. On days the calendar gives to one of you, the children sleep at that parent's."));
+  if(routine.updatedBy)c.appendChild(el("p","muted small","Last changed by "+nm(routine.updatedBy)+(routine.updatedAt?" on "+fmt(String(routine.updatedAt).slice(0,10)):"")+"."));
+  var eb=el("button","btn sec","Edit routine");eb.type="button";eb.onclick=openRoutine;c.appendChild(eb);
+  V.appendChild(c);
+}
+function whoSelect(id,val,withHas){
+  var s=el("select");s.id=id;
+  [["","Not set"],["a",nm("a")],["b",nm("b")]].concat(withHas?[["has","Who has them"]]:[]).forEach(function(o){s.appendChild(new Option(o[1],o[0]))});
+  s.value=val||"";return s;
+}
+function dlgFoot(F,label){
+  var pv=el("p","err");pv.id="kErr";pv.hidden=true;F.appendChild(pv);
+  var foot=el("div","foot");
+  var cancel=el("button","btn sec","Cancel");cancel.type="button";cancel.onclick=function(){$("#kidsDlg").close()};
+  var send=el("button","btn",label);send.type="submit";send.id="kSend";
+  foot.appendChild(cancel);foot.appendChild(send);F.appendChild(foot);
+}
+var kmode="",kact=null;
+function openRoutine(){
+  kmode="routine";var F=$("#kidsForm");F.textContent="";
+  F.appendChild(el("h2",null,"Weekly routine"));
+  F.appendChild(field("kKids","Children (separate with commas)","text",routine.kids.join(", "),{maxlength:200,placeholder:"Sidney, Kendall, Brooklyn"}));
+  var two=el("div","two");
+  two.appendChild(field("kDropT","School drop-off","time",routine.dropTime));
+  two.appendChild(field("kPickT","School pickup","time",routine.pickTime));
+  F.appendChild(two);
+  var t=el("table","rt"),hr=el("tr");["","Drop-off","Pickup","Sleeps at"].forEach(function(x){hr.appendChild(el("th",null,x))});t.appendChild(hr);
+  [1,2,3,4,5,6,0].forEach(function(d){
+    var tr=el("tr"),sc=(routine.school||{})[d];tr.appendChild(el("td",null,DN[d]));
+    var a=el("td"),b=el("td"),c=el("td");
+    if(d>=1&&d<=5){a.appendChild(whoSelect("kD"+d,sc?sc.drop:"has",true));b.appendChild(whoSelect("kP"+d,sc?sc.pick:"has",true))}
+    c.appendChild(whoSelect("kN"+d,(routine.nights||{})[d],false));
+    tr.appendChild(a);tr.appendChild(b);tr.appendChild(c);t.appendChild(tr);
+  });
+  F.appendChild(t);
+  F.appendChild(el("p","muted small","\"Who has them\" follows the calendar: drop-off is by the parent they slept at, pickup by the parent they'll sleep at. Sleeps at is for nights the calendar doesn't already give to one of you."));
+  dlgFoot(F,"Save");$("#kidsDlg").showModal();
+}
+function openAct(a){
+  kmode="act";kact=a||null;
+  if(!routine.kids.length){setTab("kids");openRoutine();return}
+  var F=$("#kidsForm");F.textContent="";
+  a=a||{title:"",kids:[],repeat:"weekly",days:[],start:"",end:"",location:"",drop:"",pick:"",note:"",date:sel,from:"",until:""};
+  F.appendChild(el("h2",null,kact?"Edit activity":"Add an activity"));
+  F.appendChild(field("kTitle","Activity","text",a.title,{maxlength:60,placeholder:"Dance class"}));
+  var fs=el("fieldset");fs.appendChild(el("legend",null,"Who is it for?"));var ch=el("div","checks");
+  routine.kids.forEach(function(k){var l=el("label","opt");l.style.margin="0";var i=el("input");i.type="checkbox";i.name="kKid";i.value=k;i.checked=a.kids.indexOf(k)>=0;l.appendChild(i);l.appendChild(el("span",null,k));ch.appendChild(l)});
+  fs.appendChild(ch);F.appendChild(fs);
+  var fs2=el("fieldset");fs2.appendChild(el("legend",null,"How often?"));
+  fs2.appendChild(radios("kRepeat",[["weekly","Every week"],["once","Just once"]],a.repeat,function(v){a.repeat=v;wk.hidden=v!=="weekly";on.hidden=v!=="once"}));F.appendChild(fs2);
+  var wk=el("div");wk.hidden=a.repeat!=="weekly";
+  var fs3=el("fieldset");fs3.appendChild(el("legend",null,"On"));var dd=el("div","days");
+  [1,2,3,4,5,6,0].forEach(function(d){var l=el("label","opt");l.style.margin="0";var i=el("input");i.type="checkbox";i.name="kDay";i.value=d;i.checked=(a.days||[]).indexOf(d)>=0;l.appendChild(i);l.appendChild(el("span",null,DN[d].slice(0,2)));dd.appendChild(l)});
+  fs3.appendChild(dd);wk.appendChild(fs3);
+  var tw=el("div","two");tw.appendChild(field("kFrom","Starting (optional)","date",a.from));tw.appendChild(field("kUntil","Until (optional)","date",a.until));wk.appendChild(tw);
+  F.appendChild(wk);
+  var on=el("div");on.hidden=a.repeat!=="once";on.appendChild(field("kDate","Date","date",a.date));F.appendChild(on);
+  var t2=el("div","two");t2.appendChild(field("kStart","Starts","time",a.start));t2.appendChild(field("kEnd","Finishes (optional)","time",a.end));F.appendChild(t2);
+  F.appendChild(field("kLoc","Where","text",a.location,{maxlength:120,placeholder:"Studio name and address"}));
+  var t3=el("div","two");
+  [["kDrop","Drop-off",a.drop],["kPick","Pickup",a.pick]].forEach(function(x){var w=el("div"),l=el("label",null,x[1]);l.htmlFor=x[0];w.appendChild(l);w.appendChild(whoSelect(x[0],x[2],true));t3.appendChild(w)});
+  F.appendChild(t3);
+  F.appendChild(field("kNote","Note (optional)","textarea",a.note,{maxlength:300}));
+  dlgFoot(F,kact?"Save":"Add activity");$("#kidsDlg").showModal();
+}
+$("#kidsForm").addEventListener("submit",function(ev){
+  ev.preventDefault();
+  var F=$("#kidsForm"),g=function(id){var e=F.querySelector("#"+id);return e?e.value:""},body,path;
+  if(kmode==="routine"){
+    body={kids:g("kKids").split(",").map(function(x){return x.trim()}).filter(Boolean),dropTime:g("kDropT"),pickTime:g("kPickT"),school:{},nights:{}};
+    for(var d=0;d<=6;d++){if(d>=1&&d<=5)body.school[d]={drop:g("kD"+d),pick:g("kP"+d)};body.nights[d]=g("kN"+d)}
+    path="/routine";
+  }else{
+    var rep=F.querySelector("input[name=kRepeat]:checked");
+    body={title:g("kTitle"),kids:Array.prototype.map.call(F.querySelectorAll("input[name=kKid]:checked"),function(i){return i.value}),
+      repeat:rep?rep.value:"weekly",days:Array.prototype.map.call(F.querySelectorAll("input[name=kDay]:checked"),function(i){return +i.value}),
+      from:g("kFrom"),until:g("kUntil"),date:g("kDate"),start:g("kStart"),end:g("kEnd"),location:g("kLoc"),drop:g("kDrop"),pick:g("kPick"),note:g("kNote")};
+    path=kact?"/activities/"+kact.id:"/activities";
+  }
+  $("#kSend").disabled=true;
+  api(path,body).then(function(){$("#kidsDlg").close();load()})
+    .catch(function(e){$("#kSend").disabled=false;if(e.message==="auth")return;var x=$("#kErr");x.hidden=false;x.textContent=e.message});
+});
+
 /* ---------- login ---------- */
 var pick="a";
 function showLogin(){
@@ -621,12 +803,13 @@ $("#next").onclick=function(){view.m++;if(view.m>11){view.m=0;view.y++}renderCal
 $("#tabCal").onclick=function(){setTab("cal")};
 $("#tabReq").onclick=function(){setTab("req")};
 $("#tabExp").onclick=function(){setTab("exp")};
-$("#newBtn").onclick=function(){if(tab==="exp")openExp();else openForm()};
+$("#tabKids").onclick=function(){setTab("kids")};
+$("#newBtn").onclick=function(){if(tab==="exp")openExp();else if(tab==="kids")openAct();else openForm()};
 $("#outBtn").onclick=function(){api("/logout",{}).then(function(){location.reload()})};
 renderAll();
 fetch("/api/names").then(function(r){return r.json()}).then(function(n){if(!loaded){names=n;renderAll();if($("#loginDlg").open)showLogin()}}).catch(function(){});
 load();
-setInterval(function(){if(loaded&&!$("#formDlg").open&&!$("#expDlg").open)load()},60000);
+setInterval(function(){if(loaded&&!$("#formDlg").open&&!$("#expDlg").open&&!$("#kidsDlg").open)load()},60000);
 document.addEventListener("visibilitychange",function(){if(!document.hidden&&loaded)load()});
 })();
 </script>

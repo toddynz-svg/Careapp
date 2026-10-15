@@ -22,7 +22,7 @@ if (!PARENTS.a.pass || !PARENTS.b.pass) {
 
 // ---------- tiny JSON file store ----------
 fs.mkdirSync(DATA_DIR, { recursive: true });
-let db = { extras: {}, requests: [], expenses: [] };
+let db = { extras: {}, requests: [], expenses: [], activities: [], routine: null };
 try { db = Object.assign(db, JSON.parse(fs.readFileSync(DB_FILE, "utf8"))); } catch (e) { /* first run */ }
 function save() {
   const tmp = DB_FILE + ".tmp";
@@ -108,6 +108,8 @@ app.get("/api/state", auth, (req, res) => {
     extras: db.extras,
     requests: db.requests,
     expenses: db.expenses,
+    activities: db.activities,
+    routine: db.routine || defaultRoutine(),
   });
 });
 
@@ -217,6 +219,89 @@ app.post("/api/expenses/:id", auth, (req, res) => {
   e.updatedBy = me;
   save();
   res.json(e);
+});
+
+// ---------- kids: weekly routine and activities ----------
+// "has" means whoever has the children that day on the calendar.
+const isWho = (v) => v === "a" || v === "b" || v === "has";
+const isTime = (v) => typeof v === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(v);
+function defaultRoutine() {
+  const school = {};
+  for (let d = 1; d <= 5; d++) school[d] = { drop: "has", pick: "has" };
+  const nights = {};
+  for (let d = 0; d <= 6; d++) nights[d] = "";
+  return {
+    kids: (process.env.KIDS || "").split(",").map((k) => k.trim()).filter(Boolean),
+    dropTime: "08:30", pickTime: "15:00", school, nights,
+  };
+}
+
+app.post("/api/routine", auth, (req, res) => {
+  const b = req.body || {}, r = defaultRoutine();
+  if (Array.isArray(b.kids)) r.kids = [...new Set(b.kids.map((k) => str(k, 30)).filter(Boolean))].slice(0, 8);
+  if (isTime(b.dropTime)) r.dropTime = b.dropTime;
+  if (isTime(b.pickTime)) r.pickTime = b.pickTime;
+  for (let d = 1; d <= 5; d++) {
+    const x = (b.school && b.school[d]) || {};
+    r.school[d] = { drop: isWho(x.drop) || x.drop === "" ? x.drop : "has", pick: isWho(x.pick) || x.pick === "" ? x.pick : "has" };
+  }
+  for (let d = 0; d <= 6; d++) r.nights[d] = isParent(b.nights && b.nights[d]) ? b.nights[d] : "";
+  r.updatedAt = new Date().toISOString();
+  r.updatedBy = req.session.who;
+  db.routine = r;
+  save();
+  res.json(r);
+});
+
+function activityFields(b, kids) {
+  const title = str(b.title, 60);
+  if (!title) return { err: "Give the activity a name" };
+  const who = Array.isArray(b.kids) ? b.kids.filter((k) => kids.includes(k)) : [];
+  if (!who.length) return { err: "Choose who it's for" };
+  if (!isTime(b.start)) return { err: "Choose a start time" };
+  if (b.end && (!isTime(b.end) || b.end <= b.start)) return { err: "The end time is before the start time" };
+  const repeat = b.repeat === "once" ? "once" : "weekly";
+  const a = { title, kids: who, repeat, start: b.start, end: b.end || "",
+    location: str(b.location, 120), note: str(b.note, 300),
+    drop: isWho(b.drop) ? b.drop : "", pick: isWho(b.pick) ? b.pick : "" };
+  if (repeat === "once") {
+    if (!isDate(b.date)) return { err: "Choose the date" };
+    a.date = b.date;
+  } else {
+    a.days = Array.isArray(b.days) ? [...new Set(b.days.filter((d) => Number.isInteger(d) && d >= 0 && d <= 6))].sort() : [];
+    if (!a.days.length) return { err: "Choose at least one day" };
+    a.from = dateOrEmpty(b.from);
+    a.until = dateOrEmpty(b.until);
+    if (a.from && a.until && a.until < a.from) return { err: "The end date is before the start date" };
+  }
+  return a;
+}
+
+app.post("/api/activities", auth, (req, res) => {
+  const v = activityFields(req.body || {}, (db.routine || defaultRoutine()).kids);
+  if (v.err) return res.status(400).json({ error: v.err });
+  const a = Object.assign({ id: crypto.randomBytes(8).toString("hex"), by: req.session.who, createdAt: new Date().toISOString() }, v);
+  db.activities.push(a);
+  save();
+  res.json(a);
+});
+
+app.post("/api/activities/:id", auth, (req, res) => {
+  const i = db.activities.findIndex((x) => x.id === req.params.id);
+  if (i < 0) return res.status(404).json({ error: "Not found" });
+  const b = req.body || {};
+  if (b.action === "delete") {
+    db.activities.splice(i, 1);
+    save();
+    return res.json({ ok: true });
+  }
+  const v = activityFields(b, (db.routine || defaultRoutine()).kids);
+  if (v.err) return res.status(400).json({ error: v.err });
+  const old = db.activities[i];
+  db.activities[i] = Object.assign({ id: old.id, by: old.by, createdAt: old.createdAt,
+    updatedAt: new Date().toISOString(), updatedBy: req.session.who }, v);
+  save();
+  res.json(db.activities[i]);
 });
 
 app.use(express.static(path.join(__dirname, "public")));

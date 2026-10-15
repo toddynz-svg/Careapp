@@ -8,6 +8,15 @@ The roster follows the care arrangement for October 2026 to September 2027: alte
 
 The Expenses tab is for bills you split. Add a bill with its total, due date, who pays it and how it's split (half each, or any two amounts that add up to the total). The other parent says where and when their share will be available. Each step is ticked off by the person who does it: the payer marks the bill paid, the other parent marks their share sent, and the payer confirms it arrived. The top of the tab shows who still owes whom across open bills. Bills are stored in `data/care.json` alongside the requests.
 
+## Kids: activities, school runs and sleeping
+
+The Kids tab holds the weekly routine and the children's activities.
+
+- **Weekly routine:** the children's names, school drop-off and pickup times, who does each school run Monday to Friday, and where the children sleep each night. "Who has them" follows the calendar: drop-off is by the parent they slept at, pickup by the parent they'll sleep at. On days the calendar gives to one parent, the children sleep at that parent's; the routine covers the other nights.
+- **Activities:** a name, which children, every week on chosen days (optionally between two dates) or just once, start and finish time, where, and who does drop-off and pickup.
+- Tapping a day on the calendar shows that day's school runs, activities and where the children are sleeping.
+- School runs only show during school terms: `TERMS` near the top of the script in `public/index.html`.
+
 ## Run it locally
 
 ```
