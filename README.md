@@ -4,6 +4,10 @@ A small shared calendar for two parents to see whose weekend it is and to ask ea
 
 The standard roster is alternating Friday-to-Sunday weekends starting Fri 4 Sep 2026, with NZ public holidays marked.
 
+## Shared expenses
+
+The Expenses tab is for bills you split. Add a bill with its total, due date, who pays it and how it's split (half each, or any two amounts that add up to the total). The other parent says where and when their share will be available. Each step is ticked off by the person who does it: the payer marks the bill paid, the other parent marks their share sent, and the payer confirms it arrived. The top of the tab shows who still owes whom across open bills. Bills are stored in `data/care.json` alongside the requests.
+
 ## Run it locally
 
 ```

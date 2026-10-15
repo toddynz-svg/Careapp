@@ -43,8 +43,8 @@ h2{font:600 1.15rem/1.2 var(--display);margin:1.5rem 0 .6rem}
 .chip.a,.pa{background:var(--a);color:var(--a-ink)}
 .chip.b,.pb{background:var(--b);color:var(--b-ink)}
 .ghost{background:none;border:1px solid var(--line);border-radius:.6rem;padding:.5rem .8rem;min-height:2.75rem;font-weight:500;white-space:nowrap}
-.tabs{display:grid;grid-template-columns:1fr 1fr;margin:1rem 0;background:var(--surface);border:1px solid var(--line);border-radius:.8rem;padding:.25rem}
-.tabs button{border:0;background:none;border-radius:.6rem;min-height:2.75rem;font-weight:600;color:var(--muted)}
+.tabs{display:grid;grid-template-columns:1fr 1fr 1fr;margin:1rem 0;background:var(--surface);border:1px solid var(--line);border-radius:.8rem;padding:.25rem}
+.tabs button{padding:0 .2rem;border:0;background:none;border-radius:.6rem;min-height:2.75rem;font-weight:600;color:var(--muted)}
 .tabs button[aria-selected="true"]{background:var(--accent);color:var(--accent-ink)}
 .count{display:inline-block;min-width:1.4rem;padding:0 .35rem;margin-left:.3rem;border-radius:1rem;background:var(--b);color:var(--b-ink);font-size:.8rem}
 .card{background:var(--surface);border:1px solid var(--line);border-radius:.9rem;padding:1rem}
@@ -104,6 +104,16 @@ textarea{min-height:4.5rem;resize:vertical}
 .preview{margin-top:1rem;padding:.7rem .8rem;border:1px dashed var(--line);border-radius:.6rem}
 .err{color:var(--warn);font-weight:500;margin:.6rem 0 0}
 .foot{display:flex;justify-content:flex-end;gap:.5rem;margin-top:1.1rem}
+.exp .meta{display:flex;flex-wrap:wrap;gap:.3rem .9rem;margin:0}
+.exp .amt{font:600 1.25rem var(--display);font-variant-numeric:tabular-nums}
+.steps{list-style:none;margin:0;padding:0;display:grid;gap:.35rem}
+.steps li{display:flex;align-items:center;justify-content:space-between;gap:.5rem;min-height:2.4rem}
+.steps .done{color:var(--ok);font-weight:600}
+.steps .todo{color:var(--muted)}
+.sum{display:flex;align-items:center;justify-content:space-between;gap:.75rem;flex-wrap:wrap}
+.sum .amt{font:700 1.5rem var(--display);font-variant-numeric:tabular-nums}
+input[type=number]{width:100%;min-height:2.9rem;padding:.55rem .7rem;border:1px solid var(--line);border-radius:.6rem;background:var(--bg)}
+.btn.small{min-height:2.4rem;padding:.35rem .8rem;font-size:.92rem}
 [hidden]{display:none!important}
 </style>
 </head>
@@ -120,6 +130,7 @@ textarea{min-height:4.5rem;resize:vertical}
   <div class="tabs" role="tablist">
     <button role="tab" id="tabCal" aria-selected="true" type="button">Calendar</button>
     <button role="tab" id="tabReq" aria-selected="false" type="button">Requests<span class="count" id="count" hidden></span></button>
+    <button role="tab" id="tabExp" aria-selected="false" type="button">Expenses<span class="count" id="expCount" hidden></span></button>
   </div>
 
   <p class="banner" id="banner" hidden></p>
@@ -140,11 +151,13 @@ textarea{min-height:4.5rem;resize:vertical}
   </section>
 
   <section id="reqView" hidden></section>
+  <section id="expView" hidden></section>
 </div>
 
 <div class="bar"><button class="btn" id="newBtn" type="button">New request</button></div>
 
 <dialog id="formDlg"><form id="form" method="dialog"></form></dialog>
+<dialog id="expDlg"><form id="expForm" method="dialog"></form></dialog>
 <dialog id="loginDlg"><form id="login" method="dialog">
   <h2>Care calendar</h2>
   <fieldset><legend>Who are you?</legend><div class="types" id="loginWho"></div></fieldset>
@@ -171,7 +184,7 @@ function todayKey(){var t=new Date();return t.getFullYear()+"-"+String(t.getMont
 function ok(v){return v==="a"||v==="b"}
 function oth(p){return p==="a"?"b":"a"}
 
-var who=null,names={a:"Parent A",b:"Parent B"},extras={},reqs=[],ov={},pend={},loaded=false;
+var who=null,names={a:"Parent A",b:"Parent B"},extras={},reqs=[],exps=[],ov={},pend={},loaded=false;
 var today=todayKey(),sel=today,view={y:+today.slice(0,4),m:+today.slice(5,7)-1},tab="cal";
 
 function nm(p){return names[p]||(p==="a"?"Parent A":"Parent B")}
@@ -200,7 +213,7 @@ function api(path,body){
     .then(function(r){if(r.status===401){showLogin();throw new Error("auth")}return r.json().then(function(j){if(!r.ok)throw new Error(j.error||"Request failed");return j})});
 }
 function load(){
-  return api("/state").then(function(s){$("#outBtn").hidden=false;who=s.who;names=s.names;extras=s.extras||{};reqs=s.requests||[];loaded=true;renderAll()}).catch(function(){});
+  return api("/state").then(function(s){$("#outBtn").hidden=false;who=s.who;names=s.names;extras=s.extras||{};reqs=s.requests||[];exps=s.expenses||[];loaded=true;renderAll()}).catch(function(){});
 }
 
 /* ---------- rendering ---------- */
@@ -296,8 +309,11 @@ function renderReqs(){
   groups.forEach(function(g){if(!g[1].length)return;any=true;V.appendChild(el("h2",null,g[0]));var l=el("div","list");g[1].forEach(function(r){l.appendChild(reqCard(r))});V.appendChild(l)});
   if(!any)V.appendChild(el("p","muted","No requests yet. Use New request to ask for a swap, a weekend off, a holiday or a change of care days."));
 }
-function renderAll(){recompute();renderHeader();renderCal();renderDetail();renderUpcoming();renderReqs()}
-function setTab(t){tab=t;$("#calView").hidden=t!=="cal";$("#reqView").hidden=t!=="req";$("#tabCal").setAttribute("aria-selected",t==="cal");$("#tabReq").setAttribute("aria-selected",t==="req")}
+function renderAll(){recompute();renderHeader();renderCal();renderDetail();renderUpcoming();renderReqs();renderExps()}
+function setTab(t){tab=t;
+  [["cal","#calView","#tabCal"],["req","#reqView","#tabReq"],["exp","#expView","#tabExp"]].forEach(function(x){$(x[1]).hidden=t!==x[0];$(x[2]).setAttribute("aria-selected",t===x[0])});
+  $("#newBtn").textContent=t==="exp"?"Add a bill":"New request";
+}
 function alertMsg(m){var b=$("#banner");b.hidden=!m;b.textContent=m||""}
 
 /* ---------- writes ---------- */
@@ -398,6 +414,167 @@ $("#form").addEventListener("submit",function(ev){
     .catch(function(e){$("#formDlg").close();if(e.message!=="auth")alertMsg("That didn't send: "+e.message)});
 });
 
+/* ---------- shared expenses ---------- */
+function money(c){return (c/100).toLocaleString("en-NZ",{style:"currency",currency:"NZD"})}
+function toCents(v){var x=parseFloat(String(v).replace(/[$,\s]/g,""));return isFinite(x)&&x>=0?Math.round(x*100):null}
+function owed(e){return e.shares[oth(e.payer)]}
+function settled(e){return e.shareReceived||(owed(e)===0&&e.billPaid)}
+function myTodo(e){
+  if(settled(e))return false;
+  if(e.payer===who)return !e.billPaid||(e.shareSent&&!e.shareReceived);
+  return owed(e)>0&&(!e.shareSent||!e.where||!e.when);
+}
+function expCard(e){
+  var c=el("div","card req exp"),other=oth(e.payer),o=owed(e);
+  var head=el("div","row");head.style.justifyContent="space-between";head.style.alignItems="baseline";
+  head.appendChild(el("h3",null,e.title));head.appendChild(el("span","amt",money(e.total)));c.appendChild(head);
+  var meta=el("p","meta muted small");
+  if(e.due)meta.appendChild(el("span",null,"Due "+fmt(e.due,true)));
+  meta.appendChild(el("span",null,"Paid by "+nm(e.payer)));
+  meta.appendChild(el("span",null,"Added by "+nm(e.from)));
+  c.appendChild(meta);
+  var split=el("div","row");split.style.alignItems="center";
+  ["a","b"].forEach(function(p){split.appendChild(el("span","chip "+p,nm(p)+" "+money(e.shares[p])))});
+  c.appendChild(split);
+  if(o>0){
+    var w=el("p","note");
+    if(e.where||e.when)w.textContent=nm(other)+"'s "+money(o)+(e.when?" will be available "+fmt(e.when,true):"")+(e.where?(e.when?", ":" ")+"via "+e.where:"")+(e.when&&!e.where?". Where not given yet.":e.where&&!e.when?". Date not given yet.":"");
+    else w.textContent=nm(other)+" hasn't said yet where and when their "+money(o)+" will be available.";
+    c.appendChild(w);
+  }
+  if(e.note)c.appendChild(el("p","note",e.note));
+  var st=el("ul","steps");
+  function step(label,doneTxt,key,owner,at){
+    var li=el("li"),done=e[key];
+    li.appendChild(el("span",done?"done":"todo",(done?"✓ ":"")+(done?doneTxt:label)+(done&&e[key+"At"]?" "+fmt(String(e[key+"At"]).slice(0,10)):"")));
+    var can=owner===who&&(key==="shareReceived"?e.shareSent:!e.shareReceived);
+    if(can){
+      var b=el("button","btn small "+(done?"sec":""),done?"Undo":"Mark done");b.type="button";
+      b.onclick=function(){b.disabled=true;expAct(e,{action:key,value:!done})};li.appendChild(b);
+    }
+    st.appendChild(li);
+  }
+  step(nm(e.payer)+" to pay the bill","Bill paid","billPaid",e.payer);
+  if(o>0){
+    step(nm(other)+" to send "+money(o),nm(other)+" sent "+money(o),"shareSent",other);
+    step(nm(e.payer)+" to confirm it arrived","Money received","shareReceived",e.payer);
+  }
+  c.appendChild(st);
+  if(!e.shareReceived){
+    var row=el("div","row");
+    var ed=el("button","btn sec small",(o>0&&e.payer!==who&&(!e.where||!e.when))?"Say where and when":"Edit");ed.type="button";ed.onclick=function(){openExp(e)};row.appendChild(ed);
+    if(e.from===who){var del=el("button","btn sec small","Delete");del.type="button";del.onclick=function(){if(confirm("Delete "+e.title+"?"))expAct(e,{action:"delete"})};row.appendChild(del)}
+    c.appendChild(row);
+  }
+  return c;
+}
+function renderExps(){
+  var V=$("#expView");V.textContent="";
+  var n=who?exps.filter(myTodo).length:0,c=$("#expCount");c.hidden=!n;c.textContent=n;
+  if(!loaded){V.appendChild(el("p","muted","Loading bills…"));return}
+  // Running balance across bills that aren't settled: positive means b owes a.
+  var bal=0;exps.forEach(function(e){if(!settled(e)&&!e.shareSent&&owed(e)>0)bal+=e.payer==="a"?owed(e):-owed(e)});
+  var sum=el("div","card sum");
+  if(bal===0)sum.appendChild(el("span",null,"Nobody owes anything on open bills."));
+  else{var debtor=bal>0?"b":"a";var t=el("span");t.appendChild(el("span","chip "+debtor,nm(debtor)));t.appendChild(document.createTextNode(" still to send "+nm(oth(debtor))));sum.appendChild(t);sum.appendChild(el("span","amt",money(Math.abs(bal))))}
+  V.appendChild(sum);
+  var byDue=function(x,y){return String(x.due||"9999").localeCompare(String(y.due||"9999"))};
+  var groups=[
+    ["Needs something from you",exps.filter(myTodo).sort(byDue)],
+    ["Waiting on "+nm(oth(who)),exps.filter(function(e){return !settled(e)&&!myTodo(e)}).sort(byDue)],
+    ["Settled",exps.filter(settled).sort(function(x,y){return String(y.due||y.createdAt).localeCompare(String(x.due||x.createdAt))})]
+  ];
+  var any=false;
+  groups.forEach(function(g){if(!g[1].length)return;any=true;V.appendChild(el("h2",null,g[0]));var l=el("div","list");g[1].forEach(function(e){l.appendChild(expCard(e))});V.appendChild(l)});
+  if(!any){var p=el("p","muted","No bills yet. Use Add a bill to log one that's coming up, how it's split, and who pays it.");p.style.marginTop="1rem";V.appendChild(p)}
+}
+function expAct(e,body){
+  api("/expenses/"+e.id,body).then(load).catch(function(err){if(err.message!=="auth")alertMsg("That didn't save: "+err.message);load()});
+}
+
+var x={};
+function radios(name,opts,val,onch){
+  var tw=el("div","types");
+  opts.forEach(function(o){var l=el("label","opt");l.style.margin="0";var i=el("input");i.type="radio";i.name=name;i.value=o[0];i.checked=val===o[0];if(onch)i.onchange=function(){onch(o[0])};l.appendChild(i);l.appendChild(el("span",null,o[1]));tw.appendChild(l)});
+  return tw;
+}
+function field(id,label,type,val,attrs){
+  var w=el("div"),l=el("label",null,label);l.htmlFor=id;w.appendChild(l);
+  var i=el(type==="textarea"?"textarea":"input");if(type!=="textarea")i.type=type;i.id=id;i.value=val||"";
+  for(var k in (attrs||{}))i.setAttribute(k,attrs[k]);
+  w.appendChild(i);return w;
+}
+function renderExpForm(){
+  var F=$("#expForm");F.textContent="";
+  F.appendChild(el("h2",null,x.id?"Edit bill":"Add a bill"));
+  F.appendChild(field("xTitle","What's the bill?","text",x.title,{maxlength:80,placeholder:"School camp, dentist, uniforms…",required:""}));
+  var two=el("div","two");
+  two.appendChild(field("xTotal","Total ($)","number",x.total,{min:"0",step:"0.01",inputmode:"decimal"}));
+  two.appendChild(field("xDue","Due date","date",x.due));
+  F.appendChild(two);
+  var fs=el("fieldset");fs.appendChild(el("legend",null,"Who pays the bill?"));
+  fs.appendChild(radios("xPayer",[["a",nm("a")],["b",nm("b")]],x.payer,function(v){x.payer=v;renderExpForm()}));F.appendChild(fs);
+  var fs2=el("fieldset");fs2.appendChild(el("legend",null,"How is it split?"));
+  fs2.appendChild(radios("xSplit",[["half","Half each"],["custom","Other split"]],x.split,function(v){x.split=v;renderExpForm()}));F.appendChild(fs2);
+  if(x.split==="custom"){
+    var t2=el("div","two");
+    t2.appendChild(field("xShareA",nm("a")+"'s share ($)","number",x.shareA,{min:"0",step:"0.01",inputmode:"decimal"}));
+    t2.appendChild(field("xShareB",nm("b")+"'s share ($)","number",x.shareB,{min:"0",step:"0.01",inputmode:"decimal"}));
+    F.appendChild(t2);
+  }
+  var other=oth(x.payer);
+  var ww=el("div");ww.id="xWW";
+  ww.appendChild(el("h2",null,"Where and when will "+nm(other)+"'s share be available?"));
+  ww.lastChild.style.fontSize="1rem";ww.lastChild.style.margin="1.1rem 0 0";
+  if(who===x.payer)ww.appendChild(el("p","muted small",nm(other)+" can fill this in if you don't know yet."));
+  ww.appendChild(field("xWhere","Where","text",x.where,{maxlength:200,placeholder:"Bank transfer to "+nm(x.payer)+"'s account, cash at handover…"}));
+  ww.appendChild(field("xWhen","Available from","date",x.when));
+  F.appendChild(ww);
+  F.appendChild(field("xNote","Note (optional)","textarea",x.note,{maxlength:500}));
+  var pv=el("div","preview");pv.id="xPv";F.appendChild(pv);
+  var foot=el("div","foot");
+  var cancel=el("button","btn sec","Cancel");cancel.type="button";cancel.onclick=function(){$("#expDlg").close()};
+  var send=el("button","btn",x.id?"Save":"Add bill");send.type="submit";send.id="xSend";
+  foot.appendChild(cancel);foot.appendChild(send);F.appendChild(foot);
+  readExp();
+}
+function readExp(){
+  var F=$("#expForm"),g=function(id){var e=F.querySelector("#"+id);return e?e.value:undefined};
+  x.title=g("xTitle");x.total=g("xTotal");x.due=g("xDue");x.where=g("xWhere");x.when=g("xWhen");x.note=g("xNote");
+  if(x.split==="custom"){x.shareA=g("xShareA");x.shareB=g("xShareB")}
+  var total=toCents(x.total),sh=null,err="";
+  if(!String(x.title||"").trim())err="Give the bill a name.";
+  else if(!total)err="Enter the bill total.";
+  else if(x.split==="half"){var half=Math.floor(total/2);sh=x.payer==="a"?{a:total-half,b:half}:{a:half,b:total-half}}
+  else{
+    var a=toCents(x.shareA||0),b=toCents(x.shareB||0);
+    if(a===null||b===null)err="Enter both shares.";
+    else if(a+b!==total)err="The shares add up to "+money(a+b)+", not "+money(total)+".";
+    else sh={a:a,b:b};
+  }
+  var o=sh?sh[oth(x.payer)]:1;
+  $("#xWW").hidden=o===0;
+  var pv=$("#xPv");pv.textContent="";
+  if(err){var pe=el("p","muted",err);pe.style.margin="0";pv.appendChild(pe)}
+  else pv.appendChild(el("p",null,o?nm(x.payer)+" pays "+money(total)+" and "+nm(oth(x.payer))+" owes "+nm(x.payer)+" "+money(o)+".":nm(x.payer)+" pays all "+money(total)+"."));
+  $("#xSend").disabled=!!err;
+  return err?{err:err}:{body:{title:x.title,total:total,shares:sh,payer:x.payer,due:x.due||"",where:o?x.where:"",when:o?x.when:"",note:x.note}};
+}
+function openExp(e){
+  var c=function(v){return v==null?"":(v/100).toFixed(2)};
+  x=e?{id:e.id,title:e.title,total:c(e.total),due:e.due,payer:e.payer,split:e.shares.a===e.shares.b||Math.abs(e.shares.a-e.shares.b)===1?"half":"custom",shareA:c(e.shares.a),shareB:c(e.shares.b),where:e.where,when:e.when,note:e.note}
+     :{title:"",total:"",due:"",payer:who,split:"half",shareA:"",shareB:"",where:"",when:"",note:""};
+  renderExpForm();$("#expDlg").showModal();
+}
+$("#expForm").addEventListener("input",readExp);
+$("#expForm").addEventListener("submit",function(ev){
+  ev.preventDefault();
+  var r=readExp();if(r.err)return;
+  $("#xSend").disabled=true;
+  api(x.id?"/expenses/"+x.id:"/expenses",r.body).then(function(){$("#expDlg").close();setTab("exp");load()})
+    .catch(function(err){$("#expDlg").close();if(err.message!=="auth")alertMsg("That didn't save: "+err.message)});
+});
+
 /* ---------- login ---------- */
 var pick="a";
 function showLogin(){
@@ -420,12 +597,13 @@ $("#prev").onclick=function(){view.m--;if(view.m<0){view.m=11;view.y--}renderCal
 $("#next").onclick=function(){view.m++;if(view.m>11){view.m=0;view.y++}renderCal()};
 $("#tabCal").onclick=function(){setTab("cal")};
 $("#tabReq").onclick=function(){setTab("req")};
-$("#newBtn").onclick=function(){openForm()};
+$("#tabExp").onclick=function(){setTab("exp")};
+$("#newBtn").onclick=function(){if(tab==="exp")openExp();else openForm()};
 $("#outBtn").onclick=function(){api("/logout",{}).then(function(){location.reload()})};
 renderAll();
 fetch("/api/names").then(function(r){return r.json()}).then(function(n){if(!loaded){names=n;renderAll();if($("#loginDlg").open)showLogin()}}).catch(function(){});
 load();
-setInterval(function(){if(loaded&&!$("#formDlg").open)load()},60000);
+setInterval(function(){if(loaded&&!$("#formDlg").open&&!$("#expDlg").open)load()},60000);
 document.addEventListener("visibilitychange",function(){if(!document.hidden&&loaded)load()});
 })();
 </script>

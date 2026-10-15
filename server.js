@@ -22,7 +22,7 @@ if (!PARENTS.a.pass || !PARENTS.b.pass) {
 
 // ---------- tiny JSON file store ----------
 fs.mkdirSync(DATA_DIR, { recursive: true });
-let db = { extras: {}, requests: [] };
+let db = { extras: {}, requests: [], expenses: [] };
 try { db = Object.assign(db, JSON.parse(fs.readFileSync(DB_FILE, "utf8"))); } catch (e) { /* first run */ }
 function save() {
   const tmp = DB_FILE + ".tmp";
@@ -107,6 +107,7 @@ app.get("/api/state", auth, (req, res) => {
     names: { a: PARENTS.a.name, b: PARENTS.b.name },
     extras: db.extras,
     requests: db.requests,
+    expenses: db.expenses,
   });
 });
 
@@ -144,6 +145,78 @@ app.post("/api/requests/:id/status", auth, (req, res) => {
   if (typeof reply === "string" && reply.trim()) r.reply = reply.trim().slice(0, 300);
   save();
   res.json(r);
+});
+
+// ---------- shared expenses ----------
+// Amounts are whole cents. The payer pays the bill; the other parent owes
+// their share and says where and when that money will be available.
+const str = (v, n) => (typeof v === "string" ? v.trim().slice(0, n) : "");
+const cents = (v) => (Number.isInteger(v) && v >= 0 && v <= 100000000 ? v : null);
+const dateOrEmpty = (v) => (typeof v === "string" && isDate(v) ? v : "");
+
+function expenseFields(b, e) {
+  const title = b.title !== undefined ? str(b.title, 80) : e.title;
+  const total = b.total !== undefined ? cents(b.total) : e.total;
+  const shares = b.shares !== undefined ? b.shares : e.shares;
+  const payer = b.payer !== undefined ? b.payer : e.payer;
+  if (!title) return { err: "Give the bill a name" };
+  if (!total) return { err: "Enter the bill total" };
+  if (!shares || cents(shares.a) === null || cents(shares.b) === null || shares.a + shares.b !== total)
+    return { err: "The two shares must add up to the total" };
+  if (!isParent(payer)) return { err: "Choose who pays the bill" };
+  return {
+    title, total, shares: { a: shares.a, b: shares.b }, payer,
+    due: b.due !== undefined ? dateOrEmpty(b.due) : e.due,
+    where: b.where !== undefined ? str(b.where, 200) : e.where,
+    when: b.when !== undefined ? dateOrEmpty(b.when) : e.when,
+    note: b.note !== undefined ? str(b.note, 500) : e.note,
+  };
+}
+
+app.post("/api/expenses", auth, (req, res) => {
+  const blank = { title: "", total: 0, shares: null, payer: "", due: "", where: "", when: "", note: "" };
+  const v = expenseFields(req.body || {}, blank);
+  if (v.err) return res.status(400).json({ error: v.err });
+  const e = Object.assign({
+    id: crypto.randomBytes(8).toString("hex"),
+    from: req.session.who,
+    billPaid: false, shareSent: false, shareReceived: false,
+    createdAt: new Date().toISOString(),
+  }, v);
+  db.expenses.push(e);
+  save();
+  res.json(e);
+});
+
+app.post("/api/expenses/:id", auth, (req, res) => {
+  const e = db.expenses.find((x) => x.id === req.params.id);
+  if (!e) return res.status(404).json({ error: "Not found" });
+  const me = req.session.who, b = req.body || {};
+  const isPayer = e.payer === me;
+  if (b.action === "delete") {
+    if (e.from !== me) return res.status(403).json({ error: "Only the person who added it can delete it" });
+    db.expenses = db.expenses.filter((x) => x !== e);
+    save();
+    return res.json({ ok: true });
+  }
+  if (b.action) {
+    // Each step is ticked by the person who did it: the payer pays the bill
+    // and confirms the money arrived; the other parent sends their share.
+    const steps = { billPaid: true, shareSent: false, shareReceived: true };
+    if (!(b.action in steps)) return res.status(400).json({ error: "Bad action" });
+    if (steps[b.action] !== isPayer) return res.status(403).json({ error: "That step is for the other parent" });
+    e[b.action] = b.value !== false;
+    e[b.action + "At"] = e[b.action] ? new Date().toISOString() : "";
+  } else {
+    if (e.shareReceived) return res.status(409).json({ error: "This bill is settled" });
+    const v = expenseFields(b, e);
+    if (v.err) return res.status(400).json({ error: v.err });
+    Object.assign(e, v);
+  }
+  e.updatedAt = new Date().toISOString();
+  e.updatedBy = me;
+  save();
+  res.json(e);
 });
 
 app.use(express.static(path.join(__dirname, "public")));
