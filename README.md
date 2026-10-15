@@ -12,9 +12,9 @@ The Expenses tab is for bills you split. Add a bill with its total, due date, wh
 
 The Kids tab holds the weekly routine and the children's activities.
 
-- **Weekly routine:** the children's names, school drop-off and pickup times, who does each school run Monday to Friday, and where the children sleep each night. "Who has them" follows the calendar: drop-off is by the parent they slept at, pickup by the parent they'll sleep at. On days the calendar gives to one parent, the children sleep at that parent's; the routine covers the other nights.
+- **Weekly routine:** the children's names, school drop-off and pickup times, who does each school run Monday to Friday, and where the children sleep each night. "Who has them" follows the calendar: drop-off is by the parent they slept at, pickup by the parent they'll sleep at. The night before a school day, the children sleep at whoever does drop-off the next morning (so a Sunday at the end of a weekend goes back for Monday school). Otherwise, on days the calendar gives to one parent, they sleep at that parent's; the routine covers the other nights.
 - **Activities:** a name, which children, every week on chosen days (optionally between two dates) or just once, start and finish time, where, and who does drop-off and pickup.
-- Tapping a day on the calendar shows that day's school runs, activities and where the children are sleeping.
+- Tapping a day on the calendar shows that day's school runs, activities and where the children are sleeping. **Change for this day** under a school run or activity sets who does that drop-off or pickup on that day only, and the other parent gets a notification.
 - School runs only show on school days: `SCHOOLS` in `public/roster.js` lists each school's children, terms and extra closed days. Special days can also be marked as no school for chosen children.
 
 ## Phone app and notifications
