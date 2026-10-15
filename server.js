@@ -11,9 +11,12 @@ const PORT = process.env.PORT || 3000;
 // On Railway, an attached volume sets RAILWAY_VOLUME_MOUNT_PATH; use it so
 // data survives redeploys even if DATA_DIR wasn't set.
 const DATA_DIR = process.env.DATA_DIR || process.env.RAILWAY_VOLUME_MOUNT_PATH || path.join(__dirname, "data");
-// Running on Railway with no volume: everything saved is lost on the next deploy.
-const NO_VOLUME = !!process.env.RAILWAY_ENVIRONMENT_NAME && !process.env.RAILWAY_VOLUME_MOUNT_PATH;
-if (NO_VOLUME) console.error("WARNING: no Railway volume attached. Data in " + DATA_DIR + " will be lost on the next deploy.");
+// Running on Railway with no volume, or saving outside it (DATA_DIR pointing
+// elsewhere): everything saved is lost on the next deploy.
+const VOL = process.env.RAILWAY_VOLUME_MOUNT_PATH ? path.resolve(process.env.RAILWAY_VOLUME_MOUNT_PATH) : "";
+const NO_VOLUME = !!process.env.RAILWAY_ENVIRONMENT_NAME &&
+  (!VOL || (path.resolve(DATA_DIR) !== VOL && !path.resolve(DATA_DIR).startsWith(VOL + path.sep)));
+if (NO_VOLUME) console.error("WARNING: not saving to a Railway volume. Data in " + DATA_DIR + " will be lost on the next deploy.");
 else console.log("Saving data in " + DATA_DIR);
 const DB_FILE = path.join(DATA_DIR, "care.json");
 

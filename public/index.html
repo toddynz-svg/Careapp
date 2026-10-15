@@ -1010,7 +1010,7 @@ function renderSetup(){
   var canPush=swReg&&"PushManager" in window&&"Notification" in window;
   var p,b;
   if(noVolume){
-    p=el("p",null,"Warning: this app isn't saving to a Railway volume, so everything entered is wiped on the next update. In Railway, add a volume mounted at /data.");
+    p=el("p",null,"Warning: this app isn't saving to a Railway volume, so everything entered is wiped on the next update. In Railway, attach a volume mounted at /data and set DATA_DIR to /data.");
     p.style.color="var(--err, #b42318)";p.style.fontWeight="600";S.appendChild(p);
   }else if(isIOS&&!standalone){
     p=el("p",null,"To get notifications on your iPhone, tap the Share button, then Add to Home Screen, and open Care from there.");
