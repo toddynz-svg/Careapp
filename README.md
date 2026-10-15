@@ -2,7 +2,7 @@
 
 A small shared calendar for two parents to see whose weekend it is and to ask each other for swaps, weekends off, holidays and changes to care days. Each parent signs in with their own password; the other parent agrees or declines each request, and agreed changes update the calendar.
 
-The standard roster is alternating Friday-to-Sunday weekends starting Fri 4 Sep 2026, with NZ public holidays marked.
+The roster follows the care arrangement for October 2026 to September 2027: alternating Friday-to-Sunday weekends, set school holiday weeks, and no roster over the Christmas and summer break (18 Dec 2026 to 21 Jan 2027). NZ public holidays are marked.
 
 ## Shared expenses
 
@@ -44,6 +44,7 @@ Redeploys happen automatically on every push to the repo.
 
 ## Changing the roster
 
-- Start date of the alternating pattern: `ANCHOR` near the top of the script in `public/index.html`.
+- The alternating pattern: `PHASES` near the top of the script in `public/index.html`. Each phase starts on a Friday and names the Friday of a weekend that belongs to parent A (`aFri`), or `null` for a stretch with no roster.
+- School holiday weeks and other set days: `BLOCKS` in the same place, as `[first day, last day, "a" or "b"]`. These win over the weekend pattern.
 - Public holidays: the `HOL` list in the same place.
 - Extra days outside the weekend pattern (for example the Waitangi week): the `extras` object in `data/care.json` on the volume, as `{"2027-02-01": "a", ...}`.
