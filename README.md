@@ -1,0 +1,45 @@
+# Care calendar
+
+A small shared calendar for two parents to see whose weekend it is and to ask each other for swaps, weekends off, holidays and changes to care days. Each parent signs in with their own password; the other parent agrees or declines each request, and agreed changes update the calendar.
+
+The standard roster is alternating Friday-to-Sunday weekends starting Fri 4 Sep 2026, with NZ public holidays marked.
+
+## Run it locally
+
+```
+npm install
+cp .env.example .env      # then edit the names and passwords
+node -e "require('fs').readFileSync('.env','utf8').split('\n').forEach(l=>{const m=l.match(/^(\w+)=(.*)$/);if(m)process.env[m[1]]=m[2]});require('./server')"
+```
+
+Or simply set the variables in your shell and run `npm start`. Open http://localhost:3000.
+
+## Put it on GitHub
+
+```
+git init
+git add .
+git commit -m "Care calendar"
+gh repo create care-calendar --private --source=. --push
+```
+
+(Or create an empty private repo on github.com and follow its "push an existing repository" instructions.) `data/` and `.env` are ignored, so no passwords or request history go into the repo.
+
+## Deploy on Railway
+
+1. In Railway, **New Project → Deploy from GitHub repo** and pick the repo. It detects Node and runs `npm start`.
+2. Open the service → **Variables** and add:
+   - `PARENT_A_NAME` and `PARENT_B_NAME` (blue and orange on the calendar)
+   - `PARENT_A_PASSWORD` and `PARENT_B_PASSWORD`
+   - `SESSION_SECRET` (any long random string)
+   - `DATA_DIR` = `/data`
+3. Service → **Settings → Volumes → Add volume**, mount path `/data`. Without this, requests are lost on every redeploy.
+4. Service → **Settings → Networking → Generate domain**. Share that URL and the orange password with your ex.
+
+Redeploys happen automatically on every push to the repo.
+
+## Changing the roster
+
+- Start date of the alternating pattern: `ANCHOR` near the top of the script in `public/index.html`.
+- Public holidays: the `HOL` list in the same place.
+- Extra days outside the weekend pattern (for example the Waitangi week): the `extras` object in `data/care.json` on the volume, as `{"2027-02-01": "a", ...}`.
