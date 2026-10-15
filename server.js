@@ -72,7 +72,9 @@ if (!process.env.SESSION_SECRET)
 // ---------- app ----------
 const app = express();
 app.set("trust proxy", 1);
-app.use(express.json({ limit: "32kb" }));
+// Receipt photos arrive as base64 JSON, so that one route takes bigger bodies.
+const smallJson = express.json({ limit: "32kb" }), bigJson = express.json({ limit: "6mb" });
+app.use((req, res, next) => (/^\/api\/expenses\/[^/]+\/receipt$/.test(req.path) ? bigJson : smallJson)(req, res, next));
 app.use(session({
   store: new FileStore(),
   secret: process.env.SESSION_SECRET || crypto.randomBytes(32).toString("hex"),
@@ -231,11 +233,14 @@ function expenseFields(b, e) {
     where: b.where !== undefined ? str(b.where, 200) : e.where,
     when: b.when !== undefined ? dateOrEmpty(b.when) : e.when,
     note: b.note !== undefined ? str(b.note, 500) : e.note,
+    category: b.category !== undefined ? (CATEGORIES.includes(b.category) ? b.category : "Other") : e.category || "Other",
+    kids: b.kids !== undefined ? (Array.isArray(b.kids) ? b.kids.filter((k) => (db.routine || defaultRoutine()).kids.includes(k)) : []) : e.kids || [],
   };
 }
+const CATEGORIES = ["School", "Health", "Activities", "Clothing", "Childcare", "Other"];
 
 app.post("/api/expenses", auth, (req, res) => {
-  const blank = { title: "", total: 0, shares: null, payer: "", due: "", where: "", when: "", note: "" };
+  const blank = { title: "", total: 0, shares: null, payer: "", due: "", where: "", when: "", note: "", category: "Other", kids: [] };
   const v = expenseFields(req.body || {}, blank);
   if (v.err) return res.status(400).json({ error: v.err });
   const e = Object.assign({
@@ -258,6 +263,7 @@ app.post("/api/expenses/:id", auth, (req, res) => {
   if (b.action === "delete") {
     if (e.from !== me) return res.status(403).json({ error: "Only the person who added it can delete it" });
     db.expenses = db.expenses.filter((x) => x !== e);
+    (e.receipts || []).forEach((r) => fs.rm(path.join(RECEIPTS, r.file), () => {}));
     save();
     return res.json({ ok: true });
   }
@@ -285,6 +291,37 @@ app.post("/api/expenses/:id", auth, (req, res) => {
     : "Updated the bill";
   tell(me, what + ": " + e.title, "exp");
   res.json(e);
+});
+
+// Receipt photos, saved next to the data. The page shrinks them before upload.
+const RECEIPTS = path.join(DATA_DIR, "receipts");
+fs.mkdirSync(RECEIPTS, { recursive: true });
+app.post("/api/expenses/:id/receipt", auth, (req, res) => {
+  const e = db.expenses.find((x) => x.id === req.params.id);
+  if (!e) return res.status(404).json({ error: "Not found" });
+  const m = /^data:image\/(jpeg|png|webp);base64,([A-Za-z0-9+/=]+)$/.exec((req.body || {}).image || "");
+  if (!m) return res.status(400).json({ error: "That isn't a photo" });
+  if ((e.receipts || []).length >= 10) return res.status(400).json({ error: "That's the most receipts for one bill" });
+  const file = e.id + "-" + crypto.randomBytes(6).toString("hex") + "." + (m[1] === "jpeg" ? "jpg" : m[1]);
+  fs.writeFileSync(path.join(RECEIPTS, file), Buffer.from(m[2], "base64"));
+  (e.receipts = e.receipts || []).push({ file, by: req.session.who, at: new Date().toISOString() });
+  save();
+  tell(req.session.who, "Added a receipt: " + e.title, "exp");
+  res.json(e);
+});
+app.post("/api/expenses/:id/receipt/:file/delete", auth, (req, res) => {
+  const e = db.expenses.find((x) => x.id === req.params.id);
+  const r = e && (e.receipts || []).find((x) => x.file === req.params.file);
+  if (!r) return res.status(404).json({ error: "Not found" });
+  if (r.by !== req.session.who) return res.status(403).json({ error: "Only the person who added it can remove it" });
+  e.receipts = e.receipts.filter((x) => x !== r);
+  fs.rm(path.join(RECEIPTS, r.file), () => {});
+  save();
+  res.json(e);
+});
+app.get("/api/receipts/:file", auth, (req, res) => {
+  if (!/^[a-f0-9]+-[a-f0-9]+\.(jpg|png|webp)$/.test(req.params.file)) return res.status(404).end();
+  res.sendFile(path.join(RECEIPTS, req.params.file), { maxAge: "30d" }, (err) => { if (err && !res.headersSent) res.status(404).end(); });
 });
 
 // ---------- kids: weekly routine and activities ----------

@@ -23,6 +23,10 @@ Care can be added to a phone's home screen so it opens like an app (on iPhone: S
 
 Notifications use web push, so no email or SMS account is needed. The keys are created on first start and saved as `vapid.json` in `DATA_DIR`.
 
+## Expense extras
+
+Each bill can have a category (School, Health, Activities, Clothing, Childcare, Other), the children it's for, and receipt photos. Photos are shrunk on the phone before upload and saved in `DATA_DIR/receipts`. The Totals panel on the Expenses tab shows a year's spending in total, each parent's share, by category and by child (bills for several children are split evenly between them).
+
 ## Kids' info
 
 The Kids tab has a card for each child with their birthday, school, teacher, doctor, dentist, allergies, medication, sizes and other notes. Phone numbers can be tapped to call. Either parent can edit them, and the other gets a notification.
